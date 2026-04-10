@@ -47,6 +47,9 @@ class LibraryScreen extends ConsumerWidget {
 
           songListAsync.when(
             data: (songs) {
+              final currentSongAsync = ref.watch(currentSongProvider);
+              final currentSongId = currentSongAsync.value?.id;
+
               if (songs.isEmpty) {
                 return SliverFillRemaining(
                   hasScrollBody: false,
@@ -93,8 +96,9 @@ class LibraryScreen extends ConsumerWidget {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final song = songs[index];
+                    final isCurrent = song.uri == currentSongId;
                     return _buildTrackItem(
-                        context, song, handler, index, songs);
+                        context, song, handler, index, songs, isCurrent);
                   },
                   childCount: songs.length,
                 ),
@@ -405,6 +409,7 @@ class LibraryScreen extends ConsumerWidget {
     FamsicAudioHandler handler,
     int index,
     List<NativeSongModel> allSongs,
+    bool isCurrent,
   ) {
     return ListTile(
       contentPadding:
@@ -413,18 +418,39 @@ class LibraryScreen extends ConsumerWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: AppTheme.deepDark.withValues(alpha: 0.05),
+          color: isCurrent
+              ? AppTheme.accentNeon.withValues(alpha: 0.1)
+              : AppTheme.deepDark.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(10),
+          border: isCurrent
+              ? Border.all(color: AppTheme.accentNeon.withValues(alpha: 0.3))
+              : null,
         ),
-        child:
-            const Icon(Icons.music_note, color: AppTheme.deepDark, size: 20),
+        child: Icon(
+          isCurrent ? Icons.pause : Icons.music_note,
+          color: isCurrent ? AppTheme.accentNeon : AppTheme.deepDark,
+          size: 20,
+        ),
       ),
-      title: Text(
-        song.title,
-        style:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            song.title,
+            style: TextStyle(
+              fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+              fontSize: 15,
+              color: isCurrent ? AppTheme.accentNeon : AppTheme.deepDark,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (isCurrent) ...[
+            const SizedBox(height: 6),
+            const ActiveTrackProgressBar(),
+            const SizedBox(height: 4),
+          ],
+        ],
       ),
       subtitle: Text(
         song.artist,
@@ -458,5 +484,58 @@ class LibraryScreen extends ConsumerWidget {
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
     return "${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
+  }
+}
+
+class ActiveTrackProgressBar extends ConsumerWidget {
+  const ActiveTrackProgressBar({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final positionAsync = ref.watch(positionProvider);
+    final durationAsync = ref.watch(durationProvider);
+
+    final position = positionAsync.value ?? Duration.zero;
+    final duration = durationAsync.value ?? Duration.zero;
+
+    double progress = 0.0;
+    if (duration.inMilliseconds > 0) {
+      progress = (position.inMilliseconds / duration.inMilliseconds)
+          .clamp(0.0, 1.0);
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            // Background track
+            Container(
+              height: 3,
+              width: constraints.maxWidth,
+              decoration: BoxDecoration(
+                color: AppTheme.accentNeon.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Progress filling with Glow
+            Container(
+              height: 3,
+              width: constraints.maxWidth * progress,
+              decoration: BoxDecoration(
+                color: AppTheme.accentNeon,
+                borderRadius: BorderRadius.circular(2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.accentNeon.withValues(alpha: 0.6),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
