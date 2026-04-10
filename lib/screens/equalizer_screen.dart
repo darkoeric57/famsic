@@ -39,14 +39,18 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
 
     final handler = ref.read(audioHandlerProvider);
 
-    // Give the player a moment to open the audio session
-    await Future.delayed(const Duration(milliseconds: 800));
-    final sessionId = handler.audioSessionId ?? 0;
+    // Poll for session ID briefly or use a shorter delay
+    int? sessionId;
+    for (int i = 0; i < 5; i++) {
+      sessionId = handler.audioSessionId;
+      if (sessionId != null && sessionId != 0) break;
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
 
     if (mounted) {
       await ref
           .read(equalizerProvider.notifier)
-          .initialize(sessionId);
+          .initialize(sessionId ?? 0);
       setState(() => _initializing = false);
     }
   }
@@ -221,7 +225,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                 color: Colors.white.withValues(alpha: 0.06),
               ),
               _buildDial(
-                label: 'LOUDNESS',
+                label: 'SOUND CLARITY',
                 value: eq.loudnessGainMb.toDouble(),
                 min: 0,
                 max: 1000,

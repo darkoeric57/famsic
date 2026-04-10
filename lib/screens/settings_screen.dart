@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../providers/settings_provider.dart';
 import '../providers/audio_providers.dart';
+import '../providers/sleep_timer_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -14,53 +15,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  Timer? _sleepCountdownTimer;
-  Duration _remainingTime = Duration.zero;
-  bool _timerRunning = false;
-
-  @override
-  void dispose() {
-    _sleepCountdownTimer?.cancel();
-    super.dispose();
-  }
-
-  void _startSleepTimer(int minutes) {
-    _sleepCountdownTimer?.cancel();
-    setState(() {
-      _remainingTime = Duration(minutes: minutes);
-      _timerRunning = true;
-    });
-
-    _sleepCountdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-      setState(() {
-        if (_remainingTime.inSeconds <= 1) {
-          _remainingTime = Duration.zero;
-          _timerRunning = false;
-          t.cancel();
-          // Pause playback when timer expires
-          ref.read(audioHandlerProvider).pause();
-          ref.read(settingsProvider.notifier).setSleepTimerEnabled(false);
-        } else {
-          _remainingTime -= const Duration(seconds: 1);
-        }
-      });
-    });
-
-    ref.read(settingsProvider.notifier).setSleepTimerEnabled(true);
-  }
-
-  void _cancelSleepTimer() {
-    _sleepCountdownTimer?.cancel();
-    setState(() {
-      _timerRunning = false;
-      _remainingTime = Duration.zero;
-    });
-    ref.read(settingsProvider.notifier).setSleepTimerEnabled(false);
-  }
 
   String _formatCountdown(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -72,6 +26,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final handler = ref.watch(audioHandlerProvider);
+    final sleepTimer = ref.watch(sleepTimerProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.creamBackground,
@@ -94,7 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Sleep Timer ────────────────────────────────────────────────
-            _buildSleepTimerCard(settings),
+            _buildSleepTimerCard(settings, sleepTimer),
 
             const SizedBox(height: 36),
 
@@ -171,15 +126,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ── Sleep Timer Card ─────────────────────────────────────────────────────
 
-  Widget _buildSleepTimerCard(SettingsState settings) {
+  Widget _buildSleepTimerCard(SettingsState settings, SleepTimerState timerState) {
     final timerOptions = [5, 15, 30, 45, 60];
     final selectedMinutes = settings.sleepTimerMinutes;
+    final isRunning = timerState.isRunning;
+    final remaining = timerState.remainingTime ?? Duration.zero;
 
     // Progress: how much of the chosen duration has elapsed
     double progress = 0.0;
-    if (_timerRunning && selectedMinutes > 0) {
+    if (isRunning && selectedMinutes > 0) {
       final total = Duration(minutes: selectedMinutes).inSeconds;
-      final elapsed = total - _remainingTime.inSeconds;
+      final elapsed = total - remaining.inSeconds;
       progress = (elapsed / total).clamp(0.0, 1.0);
     }
 
@@ -216,18 +173,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 width: 180,
                 height: 180,
                 child: CircularProgressIndicator(
-                  value: _timerRunning ? progress : (selectedMinutes / 60.0),
+                  value: isRunning ? progress : (selectedMinutes / 60.0),
                   strokeWidth: 8,
                   backgroundColor: Colors.white.withValues(alpha: 0.06),
-                  color: _timerRunning ? AppTheme.accentNeon : Colors.white24,
+                  color: isRunning ? AppTheme.accentNeon : Colors.white24,
                 ),
               ),
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _timerRunning
+                  isRunning
                       ? Text(
-                          _formatCountdown(_remainingTime),
+                          _formatCountdown(remaining),
                           style: GoogleFonts.outfit(
                               color: Colors.white,
                               fontSize: 48,
@@ -241,7 +198,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               fontWeight: FontWeight.bold),
                         ),
                   Text(
-                    _timerRunning ? 'REMAINING' : 'MINUTES',
+                    isRunning ? 'REMAINING' : 'MINUTES',
                     style: GoogleFonts.outfit(
                         color: AppTheme.secondaryGrey,
                         fontSize: 10,
@@ -262,7 +219,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: timerOptions.map((m) {
                 final isSelected = m == selectedMinutes;
                 return GestureDetector(
-                  onTap: _timerRunning
+                  onTap: isRunning
                       ? null
                       : () => ref
                           .read(settingsProvider.notifier)
@@ -322,9 +279,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (_timerRunning) ...[
+              if (isRunning) ...[
                 OutlinedButton(
-                  onPressed: _cancelSleepTimer,
+                  onPressed: () {
+                    ref.read(sleepTimerProvider.notifier).cancelTimer();
+                    ref.read(settingsProvider.notifier).setSleepTimerEnabled(false);
+                  },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.secondaryGrey,
                     side: const BorderSide(color: AppTheme.secondaryGrey),
@@ -338,7 +298,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ] else ...[
                 ElevatedButton(
-                  onPressed: () => _startSleepTimer(settings.sleepTimerMinutes),
+                  onPressed: () {
+                    ref.read(sleepTimerProvider.notifier).setTimer(Duration(minutes: selectedMinutes));
+                    ref.read(settingsProvider.notifier).setSleepTimerEnabled(true);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.accentNeon,
                     foregroundColor: Colors.white,

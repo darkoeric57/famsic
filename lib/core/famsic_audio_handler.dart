@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
 
 class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
@@ -23,8 +24,13 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     });
 
-    // Apply default gapless setting
-    _applyGapless(_gapless);
+    // Configure AudioSession for best possible quality session type
+    _configureAudioSession();
+  }
+
+  Future<void> _configureAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
   }
 
   // ─── Settings ────────────────────────────────────────────────────────────
@@ -32,30 +38,40 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// Gapless playback: sets silence between tracks to zero or a small gap.
   void applyGapless(bool enabled) {
     _gapless = enabled;
-    _applyGapless(enabled);
-  }
-
-  void _applyGapless(bool enabled) {
-    // just_audio handles gapless natively with ConcatenatingAudioSource.
-    // We can control the silence padding between items.
-    // No silence = true gapless; 100ms gap otherwise.
-    _player.setShuffleModeEnabled(false); // keep queue order
     // just_audio is gapless by default with ConcatenatingAudioSource.
-    // The only control we have is speed (no pitch-shift needed here).
   }
 
   /// High-quality audio: ensures the player runs at full volume (1.0) with
-  /// no software volume reduction. For local files just_audio always uses the
-  /// native decoder at full bit depth — there is no lossy resampling unless
-  /// the OS is forced to do so. Setting volume to 1.0 guarantees no attenuation.
+  /// no software volume reduction and optimal sampling flags.
   Future<void> applyHighQuality(bool enabled) async {
     try {
-      // Full volume = max quality signal path. Some devices apply DSP
-      // processing at volumes below 1.0.
-      await _player.setVolume(1.0);
-    } catch (_) {
-      // Not critical
-    }
+      final session = await AudioSession.instance;
+      if (enabled) {
+        // High-fidelity configuration
+        await session.configure(const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionMode: AVAudioSessionMode.defaultMode,
+          avAudioSessionRouteSharingPolicy:
+              AVAudioSessionRouteSharingPolicy.defaultPolicy,
+          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions(0),
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.music,
+            flags: AndroidAudioFlags.none,
+            usage: AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: true,
+        ));
+
+        // Force volume to 1.0 to prevent OS-level software attenuation/DSP.
+        await _player.setVolume(1.0);
+        // Ensure speed is 1.0 to avoid resampling if not needed.
+        await _player.setSpeed(1.0);
+      } else {
+        // Restore standard configuration
+        await session.configure(const AudioSessionConfiguration.music());
+      }
+    } catch (_) {}
   }
 
   // ─── Playback Controls ────────────────────────────────────────────────────

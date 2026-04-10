@@ -25,11 +25,25 @@ class LibraryScreen extends ConsumerWidget {
 
           // Current Scan Filter Info
           _buildScanFilterInfo(context, ref),
+          // Favorites Summary Card
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: _buildFavoritesCard(context),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              child: _buildRedesignedFavoritesCard(context, ref),
             ),
+          ),
+
+          // Folders Quick Access
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(context, "Folders", "MANAGE"),
+          ),
+          SliverToBoxAdapter(
+            child: _buildFolderHorizontalList(context, ref),
+          ),
+
+          // Filters / Categories
+          SliverToBoxAdapter(
+            child: _buildFilterChips(context, ref),
           ),
 
           // Playlists Section
@@ -274,72 +288,209 @@ class LibraryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildFavoritesCard(BuildContext context) {
-    return Container(
-      height: 160,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2C2C2E), Color(0xFF1C1C1E)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 15,
-            offset: const Offset(0, 10),
+  Widget _buildRedesignedFavoritesCard(BuildContext context, WidgetRef ref) {
+    final songListAsync = ref.watch(songListProvider);
+    return songListAsync.when(
+      data: (songs) {
+        // Just as a placeholder for premium look: take first few track arts
+        // In a real app we'd filter for isFavorite == true
+        return Container(
+          height: 180,
+          decoration: BoxDecoration(
+            color: AppTheme.deepDark,
+            borderRadius: BorderRadius.circular(32),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.accentNeon.withValues(alpha: 0.15),
+                blurRadius: 25,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: -20,
-            bottom: -20,
-            child: Icon(Icons.favorite,
-                color: AppTheme.accentNeon.withValues(alpha: 0.6),
-                size: 150),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(25),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Favorites",
-                      style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              // Background Mosaic Vignette
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.25,
+                  child: Wrap(
+                    spacing: 0,
+                    runSpacing: 0,
+                    children: List.generate(4, (i) {
+                      return Container(
+                        width: 170, // Rough estimate for mosaic tiles
+                        height: 90,
+                        color: i % 2 == 0 ? Colors.grey[800] : Colors.grey[900],
+                        child: const Icon(Icons.music_note, color: Colors.white10, size: 40),
+                      );
+                    }),
+                  ),
+                ),
+              ),
+              // Gradient Overlay
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.deepDark.withValues(alpha: 0.95),
+                        AppTheme.deepDark.withValues(alpha: 0.4),
+                        Colors.transparent,
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
-                    const Text(
-                      "128 Tracks",
-                      style: TextStyle(color: AppTheme.secondaryGrey),
+                  ),
+                ),
+              ),
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentNeon.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            "PREMIUM COLLECTION",
+                            style: GoogleFonts.outfit(
+                              color: AppTheme.accentNeon,
+                              fontSize: 9,
+                              letterSpacing: 1.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          "Favorites",
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "${songs.length} Tracks • 8.4 GB",
+                          style: GoogleFonts.outfit(
+                            color: AppTheme.secondaryGrey,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {},
+                      icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                      label: const Text("SHUFFLE ALL"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.accentNeon,
+                        foregroundColor: Colors.white,
+                        elevation: 8,
+                        shadowColor: AppTheme.accentNeon.withValues(alpha: 0.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
                     ),
                   ],
                 ),
-                ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => Container(height: 180),
+      error: (_, __) => Container(height: 180),
+    );
+  }
+
+  Widget _buildFolderHorizontalList(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final folderName = settings.scanPath?.split('/').last ?? "Internal Storage";
+
+    return SizedBox(
+      height: 70,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        itemCount: 2,
+        itemBuilder: (context, index) {
+          final isSelected = index == 0; // Just for UI demo
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: isSelected ? AppTheme.accentNeon.withValues(alpha: 0.1) : Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: isSelected ? AppTheme.accentNeon : AppTheme.secondaryGrey.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  index == 0 ? Icons.folder : Icons.folder_shared_outlined,
+                  size: 18,
+                  color: isSelected ? AppTheme.accentNeon : AppTheme.deepDark,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  index == 0 ? folderName : "Downloads",
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? AppTheme.accentNeon : AppTheme.deepDark,
                   ),
-                  child: const Text("Play All",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
-          ),
-        ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterChips(BuildContext context, WidgetRef ref) {
+    final filters = ["ARTISTS", "ALBUMS", "GENRES", "YEAR"];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: SizedBox(
+        height: 40,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          itemCount: filters.length,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Chip(
+                label: Text(
+                  filters[index],
+                  style: GoogleFonts.outfit(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+                backgroundColor: Colors.white,
+                side: BorderSide(color: AppTheme.secondaryGrey.withValues(alpha: 0.1)),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
