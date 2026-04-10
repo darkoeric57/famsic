@@ -17,11 +17,14 @@ class SleepTimerState {
   }
 }
 
-class SleepTimerNotifier extends StateNotifier<SleepTimerState> {
-  final Ref ref;
+class SleepTimerNotifier extends Notifier<SleepTimerState> {
   Timer? _timer;
 
-  SleepTimerNotifier(this.ref) : super(SleepTimerState());
+  @override
+  SleepTimerState build() {
+    ref.onDispose(() => _timer?.cancel());
+    return SleepTimerState();
+  }
 
   void setTimer(Duration duration) {
     _timer?.cancel();
@@ -54,14 +57,6 @@ class SleepTimerNotifier extends StateNotifier<SleepTimerState> {
     // Close app
     SystemNavigator.pop();
   }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
 }
 
-final sleepTimerProvider = StateNotifierProvider<SleepTimerNotifier, SleepTimerState>((ref) {
-  return SleepTimerNotifier(ref);
-});
+final sleepTimerProvider = NotifierProvider<SleepTimerNotifier, SleepTimerState>(SleepTimerNotifier.new);

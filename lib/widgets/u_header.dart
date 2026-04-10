@@ -320,6 +320,7 @@ class _SleepTimerSheet extends StatelessWidget {
             _TimerOption(
               label: "Custom",
               icon: Icons.edit_outlined,
+              ref: ref,
               onTap: () => _showCustomInputDialog(context),
             ),
           ],
