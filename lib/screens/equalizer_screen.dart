@@ -17,8 +17,6 @@ class EqualizerScreen extends ConsumerStatefulWidget {
 class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _glowController;
-  bool _initializing = false;
-
   @override
   void initState() {
     super.initState();
@@ -26,34 +24,8 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initEq());
   }
 
-  Future<void> _initEq() async {
-    if (!mounted) return;
-    final eqState = ref.read(equalizerProvider);
-    if (eqState.initialized) return;
-
-    setState(() => _initializing = true);
-
-    final handler = ref.read(audioHandlerProvider);
-
-    // Poll for session ID briefly or use a shorter delay
-    int? sessionId;
-    for (int i = 0; i < 5; i++) {
-      sessionId = handler.audioSessionId;
-      if (sessionId != null && sessionId != 0) break;
-      await Future.delayed(const Duration(milliseconds: 200));
-    }
-
-    if (mounted) {
-      await ref
-          .read(equalizerProvider.notifier)
-          .initialize(sessionId ?? 0);
-      setState(() => _initializing = false);
-    }
-  }
 
   @override
   void dispose() {
@@ -113,19 +85,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
           ),
         ],
       ),
-      body: _initializing
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: AppTheme.accentNeon),
-                  SizedBox(height: 16),
-                  Text('Initializing equalizer…',
-                      style: TextStyle(color: AppTheme.secondaryGrey)),
-                ],
-              ),
-            )
-          : Column(
+      body: Column(
               children: [
                 Expanded(
                   child: SingleChildScrollView(

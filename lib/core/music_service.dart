@@ -59,4 +59,13 @@ class MusicService {
       return [];
     }
   }
+
+  Future<Uint8List?> getArtwork(String uri) async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('getArtwork', {'uri': uri});
+    } catch (e) {
+      print('Famsic: Error fetching artwork for $uri: $e');
+      return null;
+    }
+  }
 }

@@ -5,9 +5,76 @@ class AppTheme {
   // Colors
   static const Color creamBackground = Color(0xFFF4F4F6);
   static const Color deepDark = Color(0xFF1A1A1A);
-  static const Color accentNeon = Color(0xFFFF2D55); // Moody Red Neon
+  static const Color accentNeon = Color(0xFFFF2D55); // Original Moody Red Neon
+  static const Color neonCyan = Color(0xFF00F2FF);
+  static const Color neonPurple = Color(0xFFBD00FF);
+  static const Color neonPink = Color(0xFFFF00E5);
   static const Color secondaryGrey = Color(0xFF8E8E93);
   static const Color white = Colors.white;
+
+  // Pathfinder / Neumorphic Colors
+  static const Color pathfinderBase = Color(0xFFE0E5EC);
+  static const Color pathfinderShadow = Color(0xFFA3B1C6);
+  static const Color pathfinderHighlight = Color(0xFFFFFFFF);
+  static const Color pathfinderDark = Color(0xFF1D1D21);
+
+  static BoxDecoration glowDecoration({
+    required Color color,
+    double blurRadius = 20,
+    double spreadRadius = 2,
+    double opacity = 0.3,
+    BorderRadius? borderRadius,
+  }) {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: borderRadius ?? BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: color.withValues(alpha: opacity),
+          blurRadius: blurRadius,
+          spreadRadius: spreadRadius,
+        ),
+      ],
+    );
+  }
+
+  static BoxDecoration neumorphicDecoration({
+    double borderRadius = 20,
+    bool isPressed = false,
+    Color baseColor = pathfinderBase,
+  }) {
+    return BoxDecoration(
+      color: baseColor,
+      borderRadius: BorderRadius.circular(borderRadius),
+      boxShadow: isPressed
+          ? [
+              BoxShadow(
+                color: Colors.white.withOpacity(0.5),
+                offset: const Offset(4, 4),
+                blurRadius: 10,
+                spreadRadius: -2,
+              ),
+              BoxShadow(
+                color: pathfinderShadow.withOpacity(0.5),
+                offset: const Offset(-4, -4),
+                blurRadius: 10,
+                spreadRadius: -2,
+              ),
+            ]
+          : [
+              BoxShadow(
+                color: pathfinderShadow,
+                offset: const Offset(8, 8),
+                blurRadius: 16,
+              ),
+              BoxShadow(
+                color: pathfinderHighlight,
+                offset: const Offset(-8, -8),
+                blurRadius: 16,
+              ),
+            ],
+    );
+  }
 
   static ThemeData get lightTheme {
     return ThemeData(

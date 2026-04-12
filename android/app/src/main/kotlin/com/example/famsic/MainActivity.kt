@@ -8,8 +8,12 @@ import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.util.Size
+import android.graphics.Bitmap
+import android.media.audiofx.Visualizer
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 
@@ -17,13 +21,16 @@ class MainActivity : AudioServiceActivity() {
 
     private val MEDIA_CHANNEL = "com.famsic.app/media_store"
     private val EQ_CHANNEL = "com.famsic.app/equalizer"
+    private val VISUALIZER_CHANNEL = "com.famsic.app/visualizer"
 
     private val scope = MainScope()
 
-    // Audio effects (null until audio session is ready)
+    // Audio effects
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var visualizer: Visualizer? = null
+    private var eventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -45,12 +52,12 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                     "getArtwork" -> {
-                        val songId = call.argument<Long>("id") ?: run {
+                        val uriStr = call.argument<String>("uri") ?: run {
                             result.success(null); return@setMethodCallHandler
                         }
                         scope.launch(Dispatchers.IO) {
                             try {
-                                val bytes = getArtworkBytes(songId)
+                                val bytes = getArtworkBytes(uriStr)
                                 withContext(Dispatchers.Main) { result.success(bytes) }
                             } catch (e: Exception) {
                                 withContext(Dispatchers.Main) { result.success(null) }
@@ -149,6 +156,17 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // ── Visualizer Channel ──────────────────────────────────────────
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, VISUALIZER_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+                    eventSink = sink
+                }
+                override fun onCancel(arguments: Any?) {
+                    eventSink = null
+                }
+            })
     }
 
     // ── Audio Effects Initialization ──────────────────────────────────────
@@ -157,11 +175,50 @@ class MainActivity : AudioServiceActivity() {
         try { equalizer?.release() } catch (_: Exception) {}
         try { bassBoost?.release() } catch (_: Exception) {}
         try { loudnessEnhancer?.release() } catch (_: Exception) {}
+        try { visualizer?.release() } catch (_: Exception) {}
 
         equalizer = Equalizer(0, audioSessionId).also { it.enabled = true }
         bassBoost = BassBoost(0, audioSessionId).also { it.enabled = true }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             loudnessEnhancer = LoudnessEnhancer(audioSessionId).also { it.enabled = false }
+        }
+
+        // Initialize Visualizer
+        try {
+            visualizer = Visualizer(audioSessionId).apply {
+                captureSize = Visualizer.getCaptureSizeRange()[1]
+                setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) {}
+
+                    override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
+                        if (fft == null || eventSink == null) return
+                        
+                        // Extract magnitudes for 7 frequency buckets
+                        val magnitudes = FloatArray(7)
+                        val numBuckets = 7
+                        val fftSize = fft.size / 2
+                        val bucketSize = fftSize / numBuckets
+                        
+                        for (i in 0 until numBuckets) {
+                            var sum = 0f
+                            for (j in (i * bucketSize) until ((i + 1) * bucketSize)) {
+                                val re = fft[j * 2].toFloat()
+                                val im = fft[j * 2 + 1].toFloat()
+                                sum += Math.sqrt((re * re + im * im).toDouble()).toFloat()
+                            }
+                            magnitudes[i] = (sum / bucketSize).coerceIn(0f, 100f)
+                        }
+                        
+                        // Send magnitudes back to Flutter
+                        scope.launch(Dispatchers.Main) {
+                            eventSink?.success(magnitudes.toList())
+                        }
+                    }
+                }, Visualizer.getMaxCaptureRate() / 2, false, true)
+                enabled = true
+            }
+        } catch (e: Exception) {
+            // Handle visualizer init failure (often due to missing RECORD_AUDIO permission)
         }
     }
 
@@ -203,6 +260,7 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATE_ADDED,
         )
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
@@ -216,6 +274,7 @@ class MainActivity : AudioServiceActivity() {
             val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val displayNameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val dateAddedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
@@ -228,16 +287,24 @@ class MainActivity : AudioServiceActivity() {
                     "duration" to c.getLong(durationCol),
                     "data" to (c.getString(dataCol) ?: ""),
                     "uri" to contentUri.toString(),
+                    "dateAdded" to c.getLong(dateAddedCol),
                 ))
             }
         }
         return songs
     }
 
-    private fun getArtworkBytes(songId: Long): ByteArray? {
+    private fun getArtworkBytes(uriStr: String): ByteArray? {
         return try {
-            val uri = Uri.parse("content://media/external/audio/albumart/$songId")
-            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            val uri = Uri.parse(uriStr)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val bitmap = contentResolver.loadThumbnail(uri, Size(512, 512), null)
+                val stream = java.io.ByteArrayOutputStream()
+                bitmap.compress(Bitmap.`CompressFormat`.JPEG, 80, stream)
+                stream.toByteArray()
+            } else {
+                contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            }
         } catch (_: Exception) { null }
     }
 
@@ -245,6 +312,7 @@ class MainActivity : AudioServiceActivity() {
         try { equalizer?.release() } catch (_: Exception) {}
         try { bassBoost?.release() } catch (_: Exception) {}
         try { loudnessEnhancer?.release() } catch (_: Exception) {}
+        try { visualizer?.release() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
     }

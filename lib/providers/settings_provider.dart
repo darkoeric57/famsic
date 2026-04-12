@@ -7,7 +7,9 @@ class SettingsState {
   final bool gaplessPlayback;
   final bool highQualityAudio;
   final bool sleepTimerEnabled;
-  final int sleepTimerMinutes; // chosen duration: 5,15,30,45,60
+  final int sleepTimerMinutes;
+  final double volume;
+  final List<int> eqBands;
 
   SettingsState({
     this.scanPath,
@@ -16,6 +18,8 @@ class SettingsState {
     this.highQualityAudio = false,
     this.sleepTimerEnabled = false,
     this.sleepTimerMinutes = 30,
+    this.volume = 1.0,
+    this.eqBands = const [],
   });
 
   SettingsState copyWith({
@@ -26,6 +30,8 @@ class SettingsState {
     bool? highQualityAudio,
     bool? sleepTimerEnabled,
     int? sleepTimerMinutes,
+    double? volume,
+    List<int>? eqBands,
   }) {
     return SettingsState(
       scanPath: clearPath ? null : (scanPath ?? this.scanPath),
@@ -34,6 +40,8 @@ class SettingsState {
       highQualityAudio: highQualityAudio ?? this.highQualityAudio,
       sleepTimerEnabled: sleepTimerEnabled ?? this.sleepTimerEnabled,
       sleepTimerMinutes: sleepTimerMinutes ?? this.sleepTimerMinutes,
+      volume: volume ?? this.volume,
+      eqBands: eqBands ?? this.eqBands,
     );
   }
 }
@@ -50,6 +58,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _hqAudioKey = 'high_quality_audio';
   static const _sleepEnabledKey = 'sleep_timer_enabled';
   static const _sleepMinutesKey = 'sleep_timer_minutes';
+  static const _volumeKey = 'player_volume';
+  static const _eqBandsKey = 'eq_bands';
 
   Future<void> _loadSettings() async {
     state = state.copyWith(isLoading: true);
@@ -61,6 +71,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
       highQualityAudio: prefs.getBool(_hqAudioKey) ?? false,
       sleepTimerEnabled: prefs.getBool(_sleepEnabledKey) ?? false,
       sleepTimerMinutes: prefs.getInt(_sleepMinutesKey) ?? 30,
+      volume: prefs.getDouble(_volumeKey) ?? 1.0,
+      eqBands: prefs.getStringList(_eqBandsKey)?.map(int.parse).toList() ?? [],
     );
   }
 
@@ -98,6 +110,18 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_sleepEnabledKey, value);
     state = state.copyWith(sleepTimerEnabled: value);
+  }
+
+  Future<void> setVolume(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_volumeKey, value);
+    state = state.copyWith(volume: value);
+  }
+
+  Future<void> setEqBands(List<int> bands) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_eqBandsKey, bands.map((e) => e.toString()).toList());
+    state = state.copyWith(eqBands: bands);
   }
 }
 

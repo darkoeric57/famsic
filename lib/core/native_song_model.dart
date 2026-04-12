@@ -8,6 +8,7 @@ class NativeSongModel {
   final int duration; // milliseconds
   final String data;  // file path
   final String uri;   // content:// URI string
+  final int dateAdded; // seconds since epoch
 
   NativeSongModel({
     required this.id,
@@ -18,6 +19,7 @@ class NativeSongModel {
     required this.duration,
     required this.data,
     required this.uri,
+    required this.dateAdded,
   });
 
   factory NativeSongModel.fromMap(Map<dynamic, dynamic> map) {
@@ -30,6 +32,7 @@ class NativeSongModel {
       duration: (map['duration'] as num?)?.toInt() ?? 0,
       data: map['data'] as String? ?? '',
       uri: map['uri'] as String? ?? '',
+      dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
     );
   }
 }

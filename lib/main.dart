@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/famsic_audio_handler.dart';
 import 'providers/audio_providers.dart';
+import 'providers/equalizer_provider.dart';
 import 'theme/app_theme.dart';
+import 'providers/settings_provider.dart';
 import 'screens/library_screen.dart';
 import 'screens/player_screen.dart';
+import 'screens/folder_screen.dart';
 
 late FamsicAudioHandler _audioHandler;
 
@@ -46,21 +49,47 @@ class FamsicApp extends StatelessWidget {
   }
 }
 
-class MainLayout extends StatefulWidget {
+class MainLayout extends ConsumerStatefulWidget {
   const MainLayout({super.key});
 
   @override
-  State<MainLayout> createState() => _MainLayoutState();
+  ConsumerState<MainLayout> createState() => _MainLayoutState();
 }
 
-class _MainLayoutState extends State<MainLayout> {
+class _MainLayoutState extends ConsumerState<MainLayout> {
   int _selectedIndex = 0; // Default to Library to show scanning progress
 
+  @override
+  void initState() {
+    super.initState();
+    _initGlobalEqualizer();
+  }
+
+  Future<void> _initGlobalEqualizer() async {
+    final handler = ref.read(audioHandlerProvider);
+    final eqNotifier = ref.read(equalizerProvider.notifier);
+
+    // Poll for session ID briefly until it's available from the player.
+    // This allows EQ settings to apply even if the user hasn't opened EQ screen yet.
+    for (int i = 0; i < 20; i++) {
+      final sessionId = handler.audioSessionId;
+      if (sessionId != null && sessionId != 0) {
+        // Apply EQ
+        await eqNotifier.initialize(sessionId);
+        
+        // Apply Volume
+        final savedVolume = ref.read(settingsProvider).volume;
+        await handler.setVolume(savedVolume);
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
   final List<Widget> _screens = [
-    const LibraryScreen(), // Library
-    const Center(child: Text('Discover')), // Discover
-    const Center(child: Text('Search')), // Search
-    const PlayerScreen(), // Player
+    const LibraryScreen(),
+    const FolderScreen(),
+    const PlayerScreen(),
   ];
 
   @override
@@ -86,9 +115,8 @@ class _MainLayoutState extends State<MainLayout> {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _buildNavItem(0, Icons.library_music_outlined, 'LIBRARY'),
-            _buildNavItem(1, Icons.explore_outlined, 'DISCOVER'),
-            _buildNavItem(2, Icons.search, 'SEARCH'),
-            _buildNavItem(3, Icons.graphic_eq, 'PLAYER'),
+            _buildNavItem(1, Icons.folder_outlined, 'FOLDERS'),
+            _buildNavItem(2, Icons.graphic_eq, 'PLAYER'),
           ],
         ),
       ),

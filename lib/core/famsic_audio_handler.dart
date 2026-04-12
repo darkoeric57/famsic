@@ -1,13 +1,19 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
 
 class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
   final _playlist = ConcatenatingAudioSource(children: []);
+  
+  static const _visualizerChannel = EventChannel('com.famsic.app/visualizer');
+  static const _eqChannel = MethodChannel('com.famsic.app/equalizer');
 
   // Settings state mirrored from SettingsProvider
   bool _gapless = true;
+  double _lastVolume = 1.0;
 
   FamsicAudioHandler() {
     _init();
@@ -26,11 +32,26 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     // Configure AudioSession for best possible quality session type
     _configureAudioSession();
+
+    // Listen for audio session ID changes to initialize native effects (EQ/Visualizer)
+    _player.androidAudioSessionIdStream.listen((sessionId) {
+      if (sessionId != null) {
+        _initNativeEffects(sessionId);
+      }
+    });
   }
 
   Future<void> _configureAudioSession() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
+  }
+
+  Future<void> _initNativeEffects(int sessionId) async {
+    try {
+      await _eqChannel.invokeMethod('init', {'sessionId': sessionId});
+    } catch (e) {
+      print('FamsicAudioHandler: Failed to init native effects — $e');
+    }
   }
 
   // ─── Settings ────────────────────────────────────────────────────────────
@@ -70,6 +91,7 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       } else {
         // Restore standard configuration
         await session.configure(const AudioSessionConfiguration.music());
+        await _player.setVolume(_lastVolume);
       }
     } catch (_) {}
   }
@@ -163,6 +185,17 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<bool> get playingStream => _player.playingStream;
+  Stream<double> get volumeStream => _player.volumeStream;
+  
+  /// Real-time frequency magnitudes from the native Visualizer (7 buckets)
+  Stream<List<double>> get visualizerStream => _visualizerChannel
+      .receiveBroadcastStream()
+      .map((event) => (event as List).cast<double>());
+
+  Future<void> setVolume(double volume) {
+    _lastVolume = volume;
+    return _player.setVolume(volume);
+  }
 
   // ─── Audio Session ────────────────────────────────────────────────────────
 
@@ -170,3 +203,4 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// Pass this to the native Equalizer so it attaches to the same stream.
   int? get audioSessionId => _player.androidAudioSessionId;
 }
+
