@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.util.Size
 import android.graphics.Bitmap
 import android.media.audiofx.Visualizer
+import android.media.audiofx.Virtualizer
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -30,6 +31,7 @@ class MainActivity : AudioServiceActivity() {
     private var bassBoost: BassBoost? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var visualizer: Visualizer? = null
+    private var virtualizer: Virtualizer? = null
     private var eventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -153,6 +155,53 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
 
+                    // Set Virtualizer strength (0–1000)
+                    "setVirtualizer" -> {
+                        val strength = call.argument<Int>("strength") ?: 0
+                        try {
+                            virtualizer?.setStrength(strength.toShort())
+                            virtualizer?.enabled = strength > 0
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("VIRTUALIZER_ERROR", e.message, null)
+                        }
+                    }
+
+                    // Set High Fidelity Studio Mode
+                    "setHighFidelityMode" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        try {
+                            if (enabled) {
+                                // Subtle Studio Mastering
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                                    loudnessEnhancer?.setTargetGain(200) // +2.0dB Presence
+                                    loudnessEnhancer?.enabled = true
+                                }
+                                virtualizer?.setStrength(150.toShort()) // Spatial Air
+                                virtualizer?.enabled = true
+                                
+                                // Slight "Crystal" boost to EQ if available
+                                equalizer?.let { eq ->
+                                    val numBands = eq.numberOfBands.toInt()
+                                    if (numBands >= 5) {
+                                        eq.setBandLevel(0, (eq.getBandLevel(0) + 100).toShort().coerceIn(-1500, 1500))
+                                        eq.setBandLevel((numBands - 1).toShort(), (eq.getBandLevel((numBands - 1).toShort()) + 150).toShort().coerceIn(-1500, 1500))
+                                    }
+                                }
+                            } else {
+                                // Restore standard (Loudness off by default, virtualizer strength 0)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                                    loudnessEnhancer?.enabled = false
+                                }
+                                virtualizer?.enabled = false
+                                virtualizer?.setStrength(0)
+                            }
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("HQ_MODE_ERROR", e.message, null)
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }
@@ -174,11 +223,12 @@ class MainActivity : AudioServiceActivity() {
     private fun initEffects(audioSessionId: Int) {
         try { equalizer?.release() } catch (_: Exception) {}
         try { bassBoost?.release() } catch (_: Exception) {}
-        try { loudnessEnhancer?.release() } catch (_: Exception) {}
+        try { virtualizer?.release() } catch (_: Exception) {}
         try { visualizer?.release() } catch (_: Exception) {}
 
         equalizer = Equalizer(0, audioSessionId).also { it.enabled = true }
         bassBoost = BassBoost(0, audioSessionId).also { it.enabled = true }
+        virtualizer = Virtualizer(0, audioSessionId).also { it.enabled = true }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             loudnessEnhancer = LoudnessEnhancer(audioSessionId).also { it.enabled = false }
         }
@@ -313,6 +363,7 @@ class MainActivity : AudioServiceActivity() {
         try { bassBoost?.release() } catch (_: Exception) {}
         try { loudnessEnhancer?.release() } catch (_: Exception) {}
         try { visualizer?.release() } catch (_: Exception) {}
+        try { virtualizer?.release() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
     }

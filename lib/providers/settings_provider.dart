@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SettingsState {
-  final String? scanPath;
+  final List<String> scanPaths;
   final bool isLoading;
   final bool gaplessPlayback;
   final bool highQualityAudio;
@@ -10,9 +10,14 @@ class SettingsState {
   final int sleepTimerMinutes;
   final double volume;
   final List<int> eqBands;
+  final bool isDarkMode;
+  final bool stereoEnabled;
+  final int stereoStrength; // 0-1000
+  final bool visualizerEnabled;
+  final String visualizerStyle;
 
   SettingsState({
-    this.scanPath,
+    this.scanPaths = const [],
     this.isLoading = false,
     this.gaplessPlayback = true,
     this.highQualityAudio = false,
@@ -20,21 +25,30 @@ class SettingsState {
     this.sleepTimerMinutes = 30,
     this.volume = 1.0,
     this.eqBands = const [],
+    this.isDarkMode = false,
+    this.stereoEnabled = false,
+    this.stereoStrength = 0,
+    this.visualizerEnabled = true,
+    this.visualizerStyle = 'Neon Bars',
   });
 
   SettingsState copyWith({
-    String? scanPath,
+    List<String>? scanPaths,
     bool? isLoading,
-    bool clearPath = false,
     bool? gaplessPlayback,
     bool? highQualityAudio,
     bool? sleepTimerEnabled,
     int? sleepTimerMinutes,
     double? volume,
     List<int>? eqBands,
+    bool? isDarkMode,
+    bool? stereoEnabled,
+    int? stereoStrength,
+    bool? visualizerEnabled,
+    String? visualizerStyle,
   }) {
     return SettingsState(
-      scanPath: clearPath ? null : (scanPath ?? this.scanPath),
+      scanPaths: scanPaths ?? this.scanPaths,
       isLoading: isLoading ?? this.isLoading,
       gaplessPlayback: gaplessPlayback ?? this.gaplessPlayback,
       highQualityAudio: highQualityAudio ?? this.highQualityAudio,
@@ -42,6 +56,11 @@ class SettingsState {
       sleepTimerMinutes: sleepTimerMinutes ?? this.sleepTimerMinutes,
       volume: volume ?? this.volume,
       eqBands: eqBands ?? this.eqBands,
+      isDarkMode: isDarkMode ?? this.isDarkMode,
+      stereoEnabled: stereoEnabled ?? this.stereoEnabled,
+      stereoStrength: stereoStrength ?? this.stereoStrength,
+      visualizerEnabled: visualizerEnabled ?? this.visualizerEnabled,
+      visualizerStyle: visualizerStyle ?? this.visualizerStyle,
     );
   }
 }
@@ -53,19 +72,36 @@ class SettingsNotifier extends Notifier<SettingsState> {
     return SettingsState();
   }
 
-  static const _scanPathKey = 'scan_path';
+  static const _scanPathsKey = 'scan_paths_list';
+  static const _oldScanPathKey = 'scan_path';
   static const _gaplessKey = 'gapless_playback';
   static const _hqAudioKey = 'high_quality_audio';
   static const _sleepEnabledKey = 'sleep_timer_enabled';
   static const _sleepMinutesKey = 'sleep_timer_minutes';
   static const _volumeKey = 'player_volume';
   static const _eqBandsKey = 'eq_bands';
+  static const _isDarkModeKey = 'is_dark_mode';
+  static const _stereoEnabledKey = 'stereo_enabled';
+  static const _stereoStrengthKey = 'stereo_strength';
+  static const _visualizerEnabledKey = 'visualizer_enabled';
+  static const _visualizerStyleKey = 'visualizer_style';
 
   Future<void> _loadSettings() async {
     state = state.copyWith(isLoading: true);
     final prefs = await SharedPreferences.getInstance();
+    
+    // Migration logic: if old path exists but no new list, convert to list
+    List<String> paths = prefs.getStringList(_scanPathsKey) ?? [];
+    if (paths.isEmpty) {
+      final oldPath = prefs.getString(_oldScanPathKey);
+      if (oldPath != null && oldPath.isNotEmpty) {
+        paths = [oldPath];
+        await prefs.setStringList(_scanPathsKey, paths);
+      }
+    }
+
     state = SettingsState(
-      scanPath: prefs.getString(_scanPathKey),
+      scanPaths: paths,
       isLoading: false,
       gaplessPlayback: prefs.getBool(_gaplessKey) ?? true,
       highQualityAudio: prefs.getBool(_hqAudioKey) ?? false,
@@ -73,19 +109,28 @@ class SettingsNotifier extends Notifier<SettingsState> {
       sleepTimerMinutes: prefs.getInt(_sleepMinutesKey) ?? 30,
       volume: prefs.getDouble(_volumeKey) ?? 1.0,
       eqBands: prefs.getStringList(_eqBandsKey)?.map(int.parse).toList() ?? [],
+      isDarkMode: prefs.getBool(_isDarkModeKey) ?? false,
+      stereoEnabled: prefs.getBool(_stereoEnabledKey) ?? false,
+      stereoStrength: prefs.getInt(_stereoStrengthKey) ?? 0,
+      visualizerEnabled: prefs.getBool(_visualizerEnabledKey) ?? true,
+      visualizerStyle: prefs.getString(_visualizerStyleKey) ?? 'Neon Bars',
     );
   }
 
-  Future<void> updateScanPath(String path) async {
+  Future<void> addScanPath(String path) async {
+    if (state.scanPaths.contains(path)) return;
+    
+    final newPaths = [...state.scanPaths, path];
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_scanPathKey, path);
-    state = state.copyWith(scanPath: path);
+    await prefs.setStringList(_scanPathsKey, newPaths);
+    state = state.copyWith(scanPaths: newPaths);
   }
 
-  Future<void> clearScanPath() async {
+  Future<void> removeScanPath(String path) async {
+    final newPaths = state.scanPaths.where((p) => p != path).toList();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_scanPathKey);
-    state = state.copyWith(clearPath: true);
+    await prefs.setStringList(_scanPathsKey, newPaths);
+    state = state.copyWith(scanPaths: newPaths);
   }
 
   Future<void> setGaplessPlayback(bool value) async {
@@ -122,6 +167,36 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_eqBandsKey, bands.map((e) => e.toString()).toList());
     state = state.copyWith(eqBands: bands);
+  }
+
+  Future<void> setIsDarkMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_isDarkModeKey, value);
+    state = state.copyWith(isDarkMode: value);
+  }
+
+  Future<void> setStereoEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_stereoEnabledKey, value);
+    state = state.copyWith(stereoEnabled: value);
+  }
+
+  Future<void> setStereoStrength(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_stereoStrengthKey, value);
+    state = state.copyWith(stereoStrength: value);
+  }
+
+  Future<void> setVisualizerEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_visualizerEnabledKey, value);
+    state = state.copyWith(visualizerEnabled: value);
+  }
+
+  Future<void> setVisualizerStyle(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_visualizerStyleKey, value);
+    state = state.copyWith(visualizerStyle: value);
   }
 }
 

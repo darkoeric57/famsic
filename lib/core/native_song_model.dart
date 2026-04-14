@@ -1,3 +1,5 @@
+import 'package:audio_service/audio_service.dart';
+
 /// A simple song model populated from our native MediaStore channel.
 class NativeSongModel {
   final int id;
@@ -33,6 +35,21 @@ class NativeSongModel {
       data: map['data'] as String? ?? '',
       uri: map['uri'] as String? ?? '',
       dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  MediaItem toMediaItem() {
+    return MediaItem(
+      id: uri, // Use content URI for playback
+      title: title,
+      artist: artist,
+      album: album,
+      duration: Duration(milliseconds: duration),
+      extras: {
+        'data': data,
+        'id': id,
+        'albumId': albumId,
+      },
     );
   }
 }

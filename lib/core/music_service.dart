@@ -24,7 +24,7 @@ class MusicService {
     return storageResult.isGranted;
   }
 
-  Future<List<NativeSongModel>> fetchLocalSongs({String? scanPath}) async {
+  Future<List<NativeSongModel>> fetchLocalSongs({List<String>? scanPaths}) async {
     try {
       final granted = await ensurePermission();
       print('Famsic: Permission granted: $granted');
@@ -46,9 +46,11 @@ class MusicService {
 
       print('Famsic: Found ${songs.length} songs.');
 
-      if (scanPath != null && scanPath.isNotEmpty) {
-        final filtered = songs.where((s) => s.data.startsWith(scanPath)).toList();
-        print('Famsic: ${filtered.length} songs in scanned path.');
+      if (scanPaths != null && scanPaths.isNotEmpty) {
+        final filtered = songs.where((s) {
+          return scanPaths.any((path) => s.data.startsWith(path));
+        }).toList();
+        print('Famsic: ${filtered.length} songs in scanned paths.');
         return filtered;
       }
 

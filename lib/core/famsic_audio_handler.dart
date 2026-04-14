@@ -54,6 +54,17 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
+  /// Stereo Enhancement (Virtualizer/Surround)
+  Future<void> applyStereoEnhancement(bool enabled, int strength) async {
+    try {
+      await _eqChannel.invokeMethod('setVirtualizer', {
+        'strength': enabled ? strength : 0,
+      });
+    } catch (e) {
+      print('FamsicAudioHandler: applyStereoEnhancement error — $e');
+    }
+  }
+
   // ─── Settings ────────────────────────────────────────────────────────────
 
   /// Gapless playback: sets silence between tracks to zero or a small gap.
@@ -88,10 +99,16 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _player.setVolume(1.0);
         // Ensure speed is 1.0 to avoid resampling if not needed.
         await _player.setSpeed(1.0);
+
+        // Native Studio Mastering
+        await _eqChannel.invokeMethod('setHighFidelityMode', {'enabled': true});
       } else {
         // Restore standard configuration
         await session.configure(const AudioSessionConfiguration.music());
         await _player.setVolume(_lastVolume);
+
+        // Disable Native Studio Mastering
+        await _eqChannel.invokeMethod('setHighFidelityMode', {'enabled': false});
       }
     } catch (_) {}
   }
@@ -186,6 +203,7 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<bool> get playingStream => _player.playingStream;
   Stream<double> get volumeStream => _player.volumeStream;
+  Stream<int?> get audioSessionIdStream => _player.androidAudioSessionIdStream;
   
   /// Real-time frequency magnitudes from the native Visualizer (7 buckets)
   Stream<List<double>> get visualizerStream => _visualizerChannel

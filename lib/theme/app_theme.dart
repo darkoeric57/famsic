@@ -17,6 +17,8 @@ class AppTheme {
   static const Color pathfinderShadow = Color(0xFFA3B1C6);
   static const Color pathfinderHighlight = Color(0xFFFFFFFF);
   static const Color pathfinderDark = Color(0xFF1D1D21);
+  static const Color surfaceDark = Color(0xFF1D1D21);
+  static const Color surfaceLight = Color(0xFFF4F4F6); // Creamy light surface
 
   static BoxDecoration glowDecoration({
     required Color color,
@@ -76,8 +78,42 @@ class AppTheme {
     );
   }
 
+  static BoxDecoration pathfinderDarkDecoration({
+    bool isSelected = false,
+    bool isCircular = false,
+    double borderWidth = 2.2,
+    double borderRadius = 16.0,
+    Color? rimColor,
+    Color backgroundColor = const Color(0xFF1D1D21),
+  }) {
+    return BoxDecoration(
+      color: backgroundColor,
+      shape: isCircular ? BoxShape.circle : BoxShape.rectangle,
+      borderRadius: isCircular ? null : BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: rimColor ?? const Color(0xFF6F5F4B).withValues(alpha: 0.6), // Premium Golden-Brownish rim
+        width: borderWidth,
+      ),
+      boxShadow: [
+        // Whitish Steaming / Top-Left Highlight
+        BoxShadow(
+          color: Colors.white.withOpacity(0.08),
+          offset: const Offset(-4, -4),
+          blurRadius: 20,
+        ),
+        // Deeper Outer Shadow (Bottom-Right)
+        BoxShadow(
+          color: Colors.black.withOpacity(0.7),
+          offset: const Offset(6, 6),
+          blurRadius: 18,
+        ),
+      ],
+    );
+  }
+
   static ThemeData get lightTheme {
     return ThemeData(
+      brightness: Brightness.light,
       useMaterial3: true,
       scaffoldBackgroundColor: creamBackground,
       colorScheme: const ColorScheme.light(
@@ -111,6 +147,47 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: deepDark),
+        centerTitle: true,
+      ),
+    );
+  }
+
+  static ThemeData get darkTheme {
+    return ThemeData(
+      brightness: Brightness.dark,
+      useMaterial3: true,
+      scaffoldBackgroundColor: surfaceDark,
+      colorScheme: const ColorScheme.dark(
+        primary: white,
+        secondary: neonCyan,
+        surface: surfaceDark,
+        onSurface: white,
+      ),
+      textTheme: GoogleFonts.outfitTextTheme().copyWith(
+        displayLarge: GoogleFonts.outfit(
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+          color: white,
+        ),
+        titleLarge: GoogleFonts.outfit(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: white,
+          letterSpacing: 0.5,
+        ),
+        bodyLarge: GoogleFonts.outfit(
+          fontSize: 16,
+          color: white,
+        ),
+        bodyMedium: GoogleFonts.outfit(
+          fontSize: 14,
+          color: secondaryGrey.withValues(alpha: 0.8),
+        ),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: white),
         centerTitle: true,
       ),
     );

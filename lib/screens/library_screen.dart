@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,15 @@ import '../providers/library_filter_provider.dart';
 import '../core/famsic_audio_handler.dart';
 import '../core/native_song_model.dart';
 import '../widgets/playback_controls.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../widgets/visualizer_styles.dart';
+import '../providers/settings_provider.dart';
+import '../widgets/hybrid_media_bar.dart';
+import '../providers/collections_provider.dart';
+import '../widgets/collection_card.dart';
+import '../widgets/collection_creator_sheet.dart';
+import '../models/local_collection.dart';
+
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -18,7 +28,17 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  bool _visualizerEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _requestPermission();
+  }
+
+  Future<void> _requestPermission() async {
+    // RECORD_AUDIO is required for the native visualizer to work
+    await Permission.microphone.request();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,21 +49,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final isPlaying = playbackState?.playing ?? false;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.surfaceLight,
       body: SafeArea(
         child: Column(
           children: [
-            // 1. Visualizer Header
-            _buildVisualizerHeader(context, ref, isPlaying && _visualizerEnabled),
-
-            // 2. Recent Plays Section (Carousel)
+            const SizedBox(height: 8),
+            // 2. Recent Plays Section (Carousel) - Now at the Top
             _buildRecentPlaysSection(context, ref, totalSongsAsync),
 
             // 3. Local Collections List (Scrollable)
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                child: _buildLocalCollections(context, ref, totalSongsAsync),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    _buildLocalCollections(context, ref, totalSongsAsync),
+                    const SizedBox(height: 40),
+                  ],
+                ),
               ),
             ),
           ],
@@ -52,164 +76,88 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       // Persistent Mini Player 
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.surfaceLight,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 20,
               offset: const Offset(0, -5),
             ),
           ],
         ),
-        padding: const EdgeInsets.only(bottom: 24, top: 12),
-        child: const PlaybackControls(isMini: true),
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 24),
+        child: const Row(
+          children: [
+            PlaybackControls(isMini: true),
+            Expanded(child: HybridMediaBar()),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildVisualizerHeader(BuildContext context, WidgetRef ref, bool isPlaying) {
-    return Container(
-      padding: const EdgeInsets.only(top: 12, bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 30,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Acoustic Visualizer",
-                      style: GoogleFonts.outfit(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.deepDark,
-                      ),
-                    ),
-                    Text(
-                      "Now Playing",
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: AppTheme.secondaryGrey,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                // Neon ON Switch Decoration
-                GestureDetector(
-                  onTap: () => setState(() => _visualizerEnabled = !_visualizerEnabled),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _visualizerEnabled 
-                          ? AppTheme.neonCyan.withValues(alpha: 0.1)
-                          : AppTheme.secondaryGrey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        if (_visualizerEnabled)
-                          BoxShadow(
-                            color: AppTheme.neonCyan.withValues(alpha: 0.2),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                          ),
-                      ],
-                      border: Border.all(
-                        color: _visualizerEnabled 
-                            ? AppTheme.neonCyan.withValues(alpha: 0.3)
-                            : AppTheme.secondaryGrey.withValues(alpha: 0.3)
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          _visualizerEnabled ? "ON" : "OFF",
-                          style: GoogleFonts.outfit(
-                            color: _visualizerEnabled ? AppTheme.neonCyan : AppTheme.secondaryGrey,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: _visualizerEnabled ? AppTheme.neonCyan : Colors.transparent,
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 80,
-            child: AcousticVisualizer(isPlaying: isPlaying),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildRecentPlaysSection(BuildContext context, WidgetRef ref, AsyncValue<List<NativeSongModel>> totalSongsAsync) {
+    final activePlaylist = ref.watch(activePlaylistProvider);
+    final currentMediaItem = ref.watch(currentSongProvider).value;
+    final handler = ref.watch(audioHandlerProvider);
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
           context, 
-          "RECENTLY PLAYING", 
-          "",
-          titleStyle: GoogleFonts.monoton(
-            fontSize: 15,
+          activePlaylist.isEmpty ? "FANTASY COLLECTION" : "ACTIVE COLLECTION", 
+          "HIGH-FIDELITY ACTIVE SOURCES",
+          titleStyle: GoogleFonts.audiowide(
+            fontSize: 16,
             color: AppTheme.neonCyan,
-            letterSpacing: 2,
+            letterSpacing: 2.5,
+            shadows: [
+              const BoxShadow(color: Color(0xFF00FFCC), blurRadius: 12, spreadRadius: 1),
+              BoxShadow(color: AppTheme.neonCyan.withValues(alpha: 0.5), blurRadius: 4),
+            ],
           ),
         ),
         SizedBox(
-          height: 185,
-          child: totalSongsAsync.when(
-            data: (songs) {
-              if (songs.isEmpty) return const SizedBox();
-              // For "Recent Plays", we could also use a different sorting or just shuffled for demo
-              return RecentlyPlayedCarousel(
-                songs: songs.length > 10 ? songs.sublist(0, 10) : songs,
-                cardBuilder: _buildRecentPlayCard,
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => const SizedBox(),
-          ),
+          height: 180, // Optimized height for better vertical density
+          child: activePlaylist.isNotEmpty 
+            ? RecentlyPlayedCarousel(
+                songs: activePlaylist,
+                currentMediaItem: currentMediaItem,
+                handler: handler,
+                cardBuilder: (context, song, {scale = 1.0, isActive = false, showButton = false}) {
+                  return _buildRecentPlayCard(context, song, scale: scale, isActive: isActive, showButton: showButton);
+                },
+              )
+            : totalSongsAsync.when(
+                data: (songs) {
+                  if (songs.isEmpty) return const SizedBox();
+                  final recentSongs = songs.length > 10 ? songs.sublist(0, 10) : songs;
+                  return RecentlyPlayedCarousel(
+                    songs: recentSongs,
+                    currentMediaItem: currentMediaItem,
+                    handler: handler,
+                    cardBuilder: (context, song, {scale = 1.0, isActive = false, showButton = false}) {
+                      return _buildRecentPlayCard(context, song, scale: scale, isActive: isActive, showButton: showButton);
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, __) => const SizedBox(),
+              ),
         ),
       ],
     );
   }
 
-  Widget _buildRecentPlayCard(BuildContext context, NativeSongModel song, {double scale = 1.0, bool isActive = false}) {
+  Widget _buildRecentPlayCard(
+    BuildContext context, 
+    NativeSongModel song, {
+    double scale = 1.0, 
+    bool isActive = false,
+    bool showButton = false,
+  }) {
     return Transform.scale(
       scale: scale,
       child: Container(
@@ -223,120 +171,163 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Consumer(
-                  builder: (context, ref, _) {
-                    final artworkAsync = ref.watch(artworkProvider(song.uri));
-                    
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: AppTheme.deepDark,
-                      ),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          artworkAsync.when(
-                            data: (bytes) => bytes != null 
-                                ? Image.memory(bytes, fit: BoxFit.cover)
-                                : const Image(
-                                    image: AssetImage('assets/images/placeholder.png'),
-                                    fit: BoxFit.cover,
-                                    opacity: const AlwaysStoppedAnimation(0.5),
+          child: Consumer(
+            builder: (context, ref, _) {
+              final currentMediaItem = ref.watch(currentSongProvider).value;
+              final playbackState = ref.watch(playbackStateProvider).value;
+              final isActuallyPlaying = currentMediaItem?.id == song.uri;
+              final isPaused = isActuallyPlaying && !(playbackState?.playing ?? false);
+              
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Builder(
+                      builder: (context) {
+                        final artworkAsync = ref.watch(artworkProvider(song.uri));
+                        
+                        return Container(
+                          decoration: const BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                          ),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              artworkAsync.when(
+                                data: (bytes) => bytes != null 
+                                    ? Image.memory(bytes, fit: BoxFit.cover)
+                                    : const Image(
+                                        image: AssetImage('assets/images/placeholder.png'),
+                                        fit: BoxFit.cover,
+                                        opacity: AlwaysStoppedAnimation(0.2),
+                                      ),
+                                loading: () => const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24),
                                   ),
-                            loading: () => const Center(
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24),
+                                ),
+                                error: (_, __) => const Image(
+                                  image: AssetImage('assets/images/placeholder.png'),
+                                  fit: BoxFit.cover,
+                                  opacity: AlwaysStoppedAnimation(0.5),
+                                ),
                               ),
-                            ),
-                            error: (_, __) => const Image(
-                              image: AssetImage('assets/images/placeholder.png'),
-                              fit: BoxFit.cover,
-                              opacity: const AlwaysStoppedAnimation(0.5),
-                            ),
+                              // Overlay Gradient for Depth
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withValues(alpha: 0.4),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // Auto-hiding Play/Pause Button
+                              if (isActive) ...[
+                                Center(
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 300),
+                                    opacity: showButton ? 1.0 : 0.0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppTheme.neonCyan,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: AppTheme.neonCyan.withValues(alpha: 0.4),
+                                            blurRadius: 12,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                        isActuallyPlaying && !isPaused ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                        color: Colors.white,
+                                        size: 40
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Integrated Dynamic Visualizer with smart dimming
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 300),
+                                    opacity: showButton ? 0.3 : 1.0,
+                                    child: DynamicVisualizer(
+                                      isPlaying: isActuallyPlaying && !isPaused,
+                                      height: 60,
+                                      opacity: showButton ? 0.3 : 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                          // Overlay Gradient for Depth
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withValues(alpha: 0.4),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                shape: BoxShape.circle,
-                                boxShadow: isActive ? [
-                                  BoxShadow(color: AppTheme.neonCyan.withValues(alpha: 0.5), blurRadius: 20)
-                                ] : [],
-                              ),
-                              child: Icon(
-                                isActive ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 40
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                ),
-              ),
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.title,
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                        );
+                      }
                     ),
-                    Text(
-                      song.artist,
-                      style: GoogleFonts.outfit(fontSize: 12, color: AppTheme.secondaryGrey),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.5),
                     ),
-                    const SizedBox(height: 8),
-                    // Mini progress line
-                    Container(
-                      height: 3,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: AppTheme.creamBackground,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: isActive ? 0.6 : 0.3,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isActive ? AppTheme.neonCyan : AppTheme.secondaryGrey,
-                            borderRadius: BorderRadius.circular(2),
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold, 
+                            fontSize: 14,
+                            color: AppTheme.deepDark,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                        Text(
+                          song.artist,
+                          style: GoogleFonts.outfit(fontSize: 12, color: AppTheme.secondaryGrey),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        // Real-time progress line
+                        if (isActuallyPlaying)
+                          const CarouselProgressLine()
+                        else
+                          Container(
+                            height: 3,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: AppTheme.secondaryGrey.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: 0.0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppTheme.secondaryGrey,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                ],
+              );
+            }
           ),
         ),
       ),
@@ -344,48 +335,58 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Widget _buildLocalCollections(BuildContext context, WidgetRef ref, AsyncValue<List<NativeSongModel>> totalSongsAsync) {
-    final count = totalSongsAsync.value?.length ?? 0;
+    final collectionsAsync = ref.watch(collectionsProvider);
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader(context, "Local Collections", "", fontSize: 16),
-        _buildCollectionItem(
+        _buildSectionHeader(
           context, 
-          "Favorite Tracks", 
-          "$count tracks", 
-          Icons.favorite_rounded, 
-          AppTheme.accentNeon
+          "LOCAL COLLECTIONS", 
+          "ADD",
+          onAction: () => _showCreateCollectionSheet(context),
+          titleStyle: GoogleFonts.outfit(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            color: AppTheme.secondaryGrey,
+            letterSpacing: 2.0,
+          ),
         ),
-        _buildCollectionItem(
-          context, 
-          "High-Res Selection", 
-          "Premium Audio", 
-          Icons.auto_awesome_rounded, 
-          AppTheme.neonCyan
-        ),
-        _buildCollectionItem(
-          context, 
-          "Personal Mixtapes", 
-          "AI Generated", 
-          Icons.graphic_eq_rounded, 
-          AppTheme.neonPurple
-        ),
-        _buildCollectionItem(
-          context, 
-          "Recent Downloads", 
-          "Last 24 hours", 
-          Icons.download_for_offline_rounded, 
-          AppTheme.accentNeon
-        ),
-        _buildCollectionItem(
-          context, 
-          "Classic Archives", 
-          "Legacy Quality", 
-          Icons.album_rounded, 
-          AppTheme.secondaryGrey
+        
+        // Dynamic Persisted Collections Only
+        collectionsAsync.when(
+          data: (collections) {
+            if (collections.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: Text(
+                  "NO COLLECTIONS CREATED YET. TAP 'ADD' TO BEGIN.",
+                  style: GoogleFonts.outfit(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.secondaryGrey.withOpacity(0.5),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: collections.map((c) => CollectionCard(collection: c)).toList(),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, __) => const SizedBox(),
         ),
       ],
+    );
+  }
+
+  void _showCreateCollectionSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const CollectionCreatorSheet(),
     );
   }
 
@@ -393,11 +394,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
-      ),
+      decoration: AppTheme.neumorphicDecoration(borderRadius: 16),
       child: Row(
         children: [
           Container(
@@ -416,7 +413,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               children: [
                 Text(
                   title,
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 16,
+                    color: AppTheme.deepDark,
+                  ),
                 ),
                 Text(
                   subtitle,
@@ -428,10 +429,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppTheme.creamBackground,
+              color: color.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.play_arrow_rounded, color: AppTheme.secondaryGrey, size: 20),
+            child: Icon(Icons.play_arrow_rounded, color: color, size: 20),
           ),
         ],
       ),
@@ -447,24 +448,36 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     TextStyle? titleStyle,
   }) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: titleStyle ?? GoogleFonts.outfit(
-              fontSize: fontSize,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.deepDark,
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: titleStyle ?? GoogleFonts.outfit(
+                fontSize: fontSize,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.deepDark,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
           if (action.isNotEmpty)
-            TextButton(
-              onPressed: onAction,
-              child: Text(
-                action,
-                style: GoogleFonts.outfit(color: AppTheme.neonCyan, fontWeight: FontWeight.bold, fontSize: 12),
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: GestureDetector(
+                onTap: onAction,
+                child: Text(
+                  action,
+                  style: GoogleFonts.outfit(
+                    color: AppTheme.neonCyan, 
+                    fontWeight: FontWeight.w900, 
+                    fontSize: 10,
+                    letterSpacing: 1.0,
+                  ),
+                ),
               ),
             ),
         ],
@@ -482,7 +495,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AppTheme.creamBackground,
+              color: AppTheme.surfaceLight,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -538,152 +551,212 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
 // ── Supporting High-Fidelity Widgets ──────────────────────────────────────────
 
-class AcousticVisualizer extends StatefulWidget {
-  final bool isPlaying;
-  const AcousticVisualizer({super.key, required this.isPlaying});
 
-  @override
-  State<AcousticVisualizer> createState() => _AcousticVisualizerState();
-}
-
-class _AcousticVisualizerState extends State<AcousticVisualizer> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  final List<double> _barHeights = List.generate(40, (i) => 4.0);
-  final math.Random _random = math.Random();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    )..addListener(() {
-      if (widget.isPlaying) {
-        setState(() {
-          for (int i = 0; i < _barHeights.length; i++) {
-            _barHeights[i] = 10 + _random.nextDouble() * 50;
-          }
-        });
-      }
-    });
-
-    if (widget.isPlaying) {
-      _controller.repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(AcousticVisualizer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        _controller.repeat();
-      } else {
-        _controller.stop();
-        setState(() {
-          for (int i = 0; i < _barHeights.length; i++) {
-            _barHeights[i] = 4.0;
-          }
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(_barHeights.length, (i) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          width: 4,
-          height: _barHeights[i],
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppTheme.neonCyan,
-                AppTheme.neonCyan.withValues(alpha: 0.5),
-                AppTheme.neonPurple,
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.circular(2),
-            boxShadow: [
-              if (widget.isPlaying)
-                BoxShadow(
-                  color: AppTheme.neonCyan.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class RecentlyPlayedCarousel extends StatefulWidget {
+class RecentlyPlayedCarousel extends ConsumerStatefulWidget {
   final List<NativeSongModel> songs;
-  final Widget Function(BuildContext, NativeSongModel, {double scale, bool isActive}) cardBuilder;
+  final MediaItem? currentMediaItem;
+  final FamsicAudioHandler handler;
+  final Widget Function(BuildContext, NativeSongModel, {double scale, bool isActive, bool showButton}) cardBuilder;
 
   const RecentlyPlayedCarousel({
     super.key, 
     required this.songs,
+    required this.currentMediaItem,
+    required this.handler,
     required this.cardBuilder,
   });
 
   @override
-  State<RecentlyPlayedCarousel> createState() => _RecentlyPlayedCarouselState();
+  ConsumerState<RecentlyPlayedCarousel> createState() => _RecentlyPlayedCarouselState();
 }
 
-class _RecentlyPlayedCarouselState extends State<RecentlyPlayedCarousel> {
+class _RecentlyPlayedCarouselState extends ConsumerState<RecentlyPlayedCarousel> {
   late PageController _pageController;
   double _currentPage = 0.0;
+  bool _isUserScrolling = false;
+  bool _showPlayButton = false;
+  Timer? _hideTimer;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: 0.7)
+    final initialIndex = _calculateInitialIndex();
+    _currentPage = initialIndex.toDouble();
+    _pageController = PageController(viewportFraction: 0.7, initialPage: initialIndex)
       ..addListener(() {
-        setState(() {
-          _currentPage = _pageController.page ?? 0.0;
-        });
+        if (mounted) {
+          setState(() {
+            _currentPage = _pageController.page ?? 0.0;
+          });
+        }
       });
+  }
+
+  int _calculateInitialIndex() {
+    if (widget.currentMediaItem == null) return 0;
+    final index = widget.songs.indexWhere((s) => s.uri == widget.currentMediaItem!.id);
+    return index != -1 ? index : 0;
+  }
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _showPlayButton = false);
+      }
+    });
+  }
+
+  void _onCardTap(int index, bool isActive) {
+    if (!isActive) {
+      // If user taps a non-active card, maybe we want to scroll to it?
+      // For now, only focus on active card interaction as requested.
+      _pageController.animateToPage(index, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
+      return;
+    }
+
+    if (!_showPlayButton) {
+      setState(() => _showPlayButton = true);
+      _startHideTimer();
+    } else {
+      // Toggle play/pause
+      _togglePlayback(index);
+      _startHideTimer(); // Reset timer upon interaction
+    }
+  }
+
+  void _togglePlayback(int index) async {
+    final playbackState = ref.read(playbackStateProvider).value;
+    final currentMediaItem = ref.read(currentSongProvider).value;
+    final targetSong = widget.songs[index];
+
+    // If no song is loaded or the current song isn't from this carousel's context, force sync the queue
+    if (currentMediaItem == null || !widget.handler.queue.value.any((item) => item.id == targetSong.uri)) {
+      final mediaItems = widget.songs.map((s) => MediaItem(
+        id: s.uri,
+        title: s.title,
+        artist: s.artist,
+        album: s.album,
+        duration: Duration(milliseconds: s.duration),
+        extras: {'id': s.id, 'albumId': s.albumId},
+      )).toList();
+      
+      await widget.handler.updateQueue(mediaItems);
+      await widget.handler.skipToQueueItem(index);
+    } else if (currentMediaItem.id == targetSong.uri) {
+      if (playbackState?.playing ?? false) {
+        widget.handler.pause();
+      } else {
+        widget.handler.play();
+      }
+    } else {
+      // Song is in queue but not active, skip to it
+      await widget.handler.skipToQueueItem(index);
+    }
+  }
+
+  @override
+  void didUpdateWidget(RecentlyPlayedCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentMediaItem?.id != oldWidget.currentMediaItem?.id && !_isUserScrolling) {
+      final newIndex = widget.songs.indexWhere((s) => s.uri == widget.currentMediaItem?.id);
+      if (newIndex != -1 && newIndex != _currentPage.round()) {
+        _pageController.animateToPage(
+          newIndex, 
+          duration: const Duration(milliseconds: 500), 
+          curve: Curves.easeOutCubic
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: widget.songs.length,
-      itemBuilder: (context, index) {
-        final song = widget.songs[index];
-        final relativePosition = index - _currentPage;
-        final scale = (1 - (relativePosition.abs() * 0.15)).clamp(0.8, 1.0);
-        final isActive = relativePosition.abs() < 0.5;
-
-        return widget.cardBuilder(
-          context, 
-          song, 
-          scale: scale, 
-          isActive: isActive
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification) {
+          _isUserScrolling = true;
+          // Hide button when user starts scrolling to avoid floating button during swipe
+          if (_showPlayButton) setState(() => _showPlayButton = false);
+        }
+        if (notification is ScrollEndNotification) _isUserScrolling = false;
+        return false;
       },
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.songs.length,
+        onPageChanged: (index) {
+          final song = widget.songs[index];
+          if (widget.currentMediaItem?.id != song.uri) {
+            widget.handler.skipToQueueItem(index);
+            widget.handler.play();
+          }
+          // Ensure button is hidden on new page
+          setState(() => _showPlayButton = false);
+        },
+        itemBuilder: (context, index) {
+          final song = widget.songs[index];
+          final relativePosition = index - _currentPage;
+          final scale = (1 - (relativePosition.abs() * 0.15)).clamp(0.8, 1.0);
+          final isActive = relativePosition.abs() < 0.5;
+
+          return GestureDetector(
+            onTap: () => _onCardTap(index, isActive),
+            child: widget.cardBuilder(
+              context, 
+              song, 
+              scale: scale, 
+              isActive: isActive,
+              showButton: _showPlayButton
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class CarouselProgressLine extends ConsumerWidget {
+  const CarouselProgressLine({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final position = ref.watch(positionProvider).value ?? Duration.zero;
+    final duration = ref.watch(durationProvider).value ?? Duration.zero;
+    final progress = duration.inMilliseconds > 0 
+        ? position.inMilliseconds / duration.inMilliseconds 
+        : 0.0;
+
+    return Container(
+      height: 3,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppTheme.secondaryGrey.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: progress.clamp(0.0, 1.0),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppTheme.neonCyan,
+            borderRadius: BorderRadius.circular(2),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.neonCyan.withOpacity(0.4),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

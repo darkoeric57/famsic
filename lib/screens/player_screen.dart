@@ -12,6 +12,7 @@ import '../providers/audio_providers.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../providers/settings_provider.dart';
 import 'equalizer_screen.dart';
+import 'settings_screen.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key});
@@ -75,17 +76,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Widget build(BuildContext context) {
     final currentSong = ref.watch(currentSongProvider).value;
     final playbackState = ref.watch(playbackStateProvider).value;
-    final position = ref.watch(positionProvider).value ?? Duration.zero;
-    final duration = ref.watch(durationProvider).value ?? Duration.zero;
-
-    final progress = duration.inMilliseconds > 0
-        ? position.inMilliseconds / duration.inMilliseconds
-        : 0.0;
-
+    // MOVED: position, duration and progress to HorizontalProgressBar to stop global flickering
+    
     final playing = playbackState?.playing ?? false;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEEF1F5),
+      backgroundColor: AppTheme.surfaceLight,
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -132,18 +128,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                               height: 120,
                               width: 35,
                               padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: AppTheme.neumorphicDecoration(
+                              decoration: AppTheme.pathfinderDarkDecoration(
                                 borderRadius: 18,
-                                baseColor: const Color(0xFFEEF1F5),
                               ),
                               child: RotatedBox(
                                 quarterTurns: 3,
                                 child: SliderTheme(
                                   data: SliderThemeData(
                                     trackHeight: 6,
-                                    activeTrackColor: const Color(0xFF22D3EE),
-                                    inactiveTrackColor: Colors.black12,
-                                    thumbColor: Colors.white,
+                                    activeTrackColor: AppTheme.neonCyan,
+                                    inactiveTrackColor: AppTheme.secondaryGrey.withValues(alpha: 0.2),
+                                    thumbColor: AppTheme.neonCyan,
                                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                                   ),
@@ -170,14 +165,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                 Container(
                                   width: 40,
                                   height: 40,
-                                  decoration: AppTheme.neumorphicDecoration(borderRadius: 20),
+                                  decoration: AppTheme.pathfinderDarkDecoration(isCircular: true, borderWidth: 1.5), // Switched to premium dark
                                   child: Center(
                                     child: Text(
                                       "${(_volume * 100).toInt()}%",
                                       style: GoogleFonts.outfit(
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
-                                        color: AppTheme.secondaryGrey,
+                                        color: AppTheme.neonCyan,
                                       ),
                                     ),
                                   ),
@@ -202,12 +197,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 
                 const Spacer(flex: 2),
                 
-                // 4. Horizontal Progress
-                HorizontalProgressBar(
-                  progress: progress,
-                  position: position,
-                  duration: duration,
-                ),
+                // 4. Horizontal Progress (Now manages its own position/duration/progress internally)
+                const HorizontalProgressBar(),
                 
                 const SizedBox(height: 45),
                 
@@ -233,12 +224,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         GestureDetector(
-          onTap: () => Navigator.pop(context),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (c) => const SettingsScreen()),
+          ),
           child: Container(
             width: 48,
             height: 48,
-            decoration: AppTheme.neumorphicDecoration(borderRadius: 16),
-            child: const Icon(Icons.chevron_left, color: AppTheme.secondaryGrey, size: 28),
+            decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 16, borderWidth: 1.8),
+            child: const Icon(LucideIcons.settings, color: Colors.white, size: 24),
           ),
         ),
         Expanded(
@@ -263,7 +257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 style: GoogleFonts.outfit(
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
-                  color: AppTheme.pathfinderDark,
+                  color: AppTheme.deepDark,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -278,8 +272,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           child: Container(
             width: 48,
             height: 48,
-            decoration: AppTheme.neumorphicDecoration(borderRadius: 16),
-            child: const Icon(Icons.sort, color: AppTheme.secondaryGrey, size: 24),
+            decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 16, borderWidth: 1.8),
+            child: const Icon(Icons.sort, color: Colors.white, size: 24),
           ),
         ),
       ],

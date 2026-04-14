@@ -15,7 +15,7 @@ final musicServiceProvider = Provider((ref) => MusicService());
 final songListProvider = FutureProvider<List<NativeSongModel>>((ref) async {
   final service = ref.watch(musicServiceProvider);
   final settings = ref.watch(settingsProvider);
-  return service.fetchLocalSongs(scanPath: settings.scanPath);
+  return service.fetchLocalSongs(scanPaths: settings.scanPaths);
 });
 
 final playbackStateProvider = StreamProvider<PlaybackState>((ref) {
@@ -41,6 +41,16 @@ final durationProvider = StreamProvider<Duration?>((ref) {
 final volumeProvider = StreamProvider<double>((ref) {
   final handler = ref.watch(audioHandlerProvider);
   return handler.volumeStream;
+});
+
+final visualizerStreamProvider = StreamProvider<List<double>>((ref) {
+  final handler = ref.watch(audioHandlerProvider);
+  return handler.visualizerStream;
+});
+
+final audioSessionIdProvider = StreamProvider<int?>((ref) {
+  final handler = ref.watch(audioHandlerProvider);
+  return handler.audioSessionIdStream;
 });
 
 /// Extracts unique folders with track counts from the loaded song list.
@@ -75,8 +85,28 @@ final foldersProvider = Provider<List<Map<String, dynamic>>>((ref) {
   );
 });
 
+/// Returns songs filtered by their parent directory path.
+final folderSongsProvider = Provider.family<List<NativeSongModel>, String>((ref, folderPath) {
+  final songsAsync = ref.watch(songListProvider);
+  return songsAsync.when(
+    data: (songs) => songs.where((s) => s.data.startsWith(folderPath)).toList(),
+    loading: () => [],
+    error: (_, __) => [],
+  );
+});
+
 final artworkProvider = FutureProvider.family<Uint8List?, String>((ref, uri) async {
   if (uri.isEmpty) return null;
   final service = ref.watch(musicServiceProvider);
   return service.getArtwork(uri);
 });
+
+/// Tracks the active list of songs for the Library carousel (e.g. from a specific Folder).
+final activePlaylistProvider = NotifierProvider<ActivePlaylistNotifier, List<NativeSongModel>>(ActivePlaylistNotifier.new);
+
+class ActivePlaylistNotifier extends Notifier<List<NativeSongModel>> {
+  @override
+  List<NativeSongModel> build() => [];
+  
+  void setPlaylist(List<NativeSongModel> playlist) => state = playlist;
+}

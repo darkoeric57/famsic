@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart' as fp;
 import '../providers/audio_providers.dart';
 import '../providers/settings_provider.dart';
+import '../providers/navigation_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/horizontal_progress.dart';
+import '../core/music_service.dart';
+import '../core/famsic_audio_handler.dart';
+import '../core/native_song_model.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 
 class FolderScreen extends ConsumerStatefulWidget {
   const FolderScreen({super.key});
@@ -16,6 +23,7 @@ class FolderScreen extends ConsumerStatefulWidget {
 class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerProviderStateMixin {
   bool _fxEnabled = true;
   late AnimationController _syncController;
+  String? _expandedPath;
 
   @override
   void initState() {
@@ -88,7 +96,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                   ),
                   
                   const SizedBox(height: 12),
-                  _buildActiveFolderTag(ref),
+                  _buildActiveFolderTags(ref),
                   
                   const SizedBox(height: 20),
 
@@ -101,7 +109,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                             itemCount: folders.length,
                             itemBuilder: (context, index) {
                               final folder = folders[index];
-                              return _buildFolderCard(folder, index);
+                              return _buildFolderExplorerItem(folder, index);
                             },
                           ),
                   ),
@@ -200,20 +208,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: isPrimary ? Colors.black : Colors.white.withOpacity(0.5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isPrimary ? AppTheme.accentNeon : Colors.black.withOpacity(0.1),
-            width: 1.5,
-          ),
-          boxShadow: isPrimary ? [
-            BoxShadow(
-              color: AppTheme.accentNeon.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            )
-          ] : [],
+        decoration: AppTheme.neumorphicDecoration(
+          borderRadius: 12,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -221,7 +217,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
             Theme(
               data: Theme.of(context).copyWith(
                 iconTheme: IconThemeData(
-                  color: isPrimary ? AppTheme.accentNeon : Colors.black.withOpacity(0.6),
+                  color: isPrimary ? AppTheme.accentNeon : AppTheme.deepDark.withOpacity(0.6),
                 ),
               ),
               child: icon,
@@ -232,7 +228,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
-                color: isPrimary ? AppTheme.accentNeon : Colors.black.withOpacity(0.6),
+                color: isPrimary ? AppTheme.accentNeon : AppTheme.deepDark.withOpacity(0.6),
                 letterSpacing: 0.5,
               ),
             ),
@@ -242,39 +238,64 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildActiveFolderTag(WidgetRef ref) {
-    final scanPath = ref.watch(settingsProvider).scanPath;
-    if (scanPath == null) return const SizedBox.shrink();
+  Widget _buildActiveFolderTags(WidgetRef ref) {
+    final scanPaths = ref.watch(settingsProvider).scanPaths;
+    if (scanPaths.isEmpty) return const SizedBox.shrink();
 
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: scanPaths.map((path) => _buildPathTag(ref, path)).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPathTag(WidgetRef ref, String path) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: AppTheme.accentNeon.withOpacity(0.1),
+        color: AppTheme.accentNeon.withOpacity(0.12),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppTheme.accentNeon.withOpacity(0.3)),
+        border: Border.all(color: AppTheme.accentNeon.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.accentNeon.withOpacity(0.08),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.folder_open, size: 14, color: AppTheme.accentNeon),
+          Icon(Icons.folder_open, size: 13, color: AppTheme.accentNeon),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              scanPath.split('/').last.toUpperCase(),
+              path.split('/').last.toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w900,
                 color: AppTheme.accentNeon,
-                letterSpacing: 1.0,
+                letterSpacing: 1.2,
               ),
             ),
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () => ref.read(settingsProvider.notifier).clearScanPath(),
-            child: Icon(Icons.close, size: 14, color: AppTheme.accentNeon),
+            onTap: () => ref.read(settingsProvider.notifier).removeScanPath(path),
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: AppTheme.accentNeon.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.close, size: 10, color: AppTheme.accentNeon),
+            ),
           ),
         ],
       ),
@@ -285,7 +306,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
     try {
       final String? selectedDirectory = await fp.FilePicker.getDirectoryPath();
       if (selectedDirectory != null) {
-        await ref.read(settingsProvider.notifier).updateScanPath(selectedDirectory);
+        await ref.read(settingsProvider.notifier).addScanPath(selectedDirectory);
         ref.invalidate(songListProvider);
       }
     } catch (e) {
@@ -298,20 +319,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
       onTap: () => setState(() => _fxEnabled = !_fxEnabled),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: _fxEnabled ? Colors.black : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _fxEnabled ? AppTheme.accentNeon : Colors.black.withOpacity(0.1),
-            width: 1.5,
-          ),
-          boxShadow: _fxEnabled ? [
-            BoxShadow(
-              color: AppTheme.accentNeon.withOpacity(0.3),
-              blurRadius: 8,
-              spreadRadius: 1,
-            )
-          ] : [],
+        decoration: AppTheme.neumorphicDecoration(
+          borderRadius: 12,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -321,7 +330,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                color: _fxEnabled ? AppTheme.accentNeon : Colors.black.withOpacity(0.3),
+                color: _fxEnabled ? AppTheme.accentNeon : AppTheme.deepDark.withOpacity(0.3),
               ),
             ),
             const SizedBox(width: 6),
@@ -330,7 +339,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
               height: 6,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _fxEnabled ? AppTheme.accentNeon : Colors.black.withOpacity(0.1),
+                color: _fxEnabled ? AppTheme.accentNeon : AppTheme.deepDark.withOpacity(0.1),
               ),
             ),
           ],
@@ -339,7 +348,19 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildFolderCard(Map<String, dynamic> folder, int index) {
+  Widget _buildFolderExplorerItem(Map<String, dynamic> folder, int index) {
+    final path = folder['path'] as String;
+    final isExpanded = _expandedPath == path;
+
+    return Column(
+      children: [
+        _buildFolderCard(folder, index, isExpanded),
+        if (isExpanded) _buildFolderTracksList(path, index),
+      ],
+    );
+  }
+
+  Widget _buildFolderCard(Map<String, dynamic> folder, int index, bool isExpanded) {
     // Generate a unique neon color based on index
     final List<Color> neonColors = [
       const Color(0xFF00FFFF), // Cyan
@@ -350,89 +371,252 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
     ];
     final color = neonColors[index % neonColors.length];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (_expandedPath == folder['path']) {
+            _expandedPath = null;
+          } else {
+            _expandedPath = folder['path'];
+          }
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: AppTheme.neumorphicDecoration(
+          borderRadius: 24,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                // Neon Status Strip - Active glow if expanded
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: isExpanded ? color : color.withOpacity(0.5),
+                    boxShadow: isExpanded ? [BoxShadow(color: color, blurRadius: 10, spreadRadius: 1)] : [],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Icon Container with soft glow
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    _getFolderIcon(folder['name']),
+                    color: color,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Text Info
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          folder['name'].toUpperCase(),
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                            color: AppTheme.deepDark,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${folder['count']} TRACKS',
+                          style: GoogleFonts.outfit(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.secondaryGrey,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Animated Arrow
+                Padding(
+                  padding: const EdgeInsets.only(right: 20),
+                  child: AnimatedRotation(
+                    turns: isExpanded ? 0.25 : 0, // 90 degrees
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: AppTheme.secondaryGrey,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: IntrinsicHeight(
-          child: Row(
-            children: [
-              // Neon Status Strip
-              Container(
-                width: 4,
-                color: color,
-              ),
-              const SizedBox(width: 16),
-              // Icon Container with soft glow
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
+    );
+  }
+
+  Widget _buildFolderTracksList(String folderPath, int folderIndex) {
+    final songs = ref.watch(folderSongsProvider(folderPath));
+    final currentMediaItem = ref.watch(currentSongProvider).value;
+    final handler = ref.watch(audioHandlerProvider);
+
+    return Container(
+      margin: const EdgeInsets.only(left: 20, bottom: 20, right: 4),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: Colors.black.withOpacity(0.05), width: 2)),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: songs.length,
+        itemBuilder: (context, idx) {
+          final song = songs[idx];
+          final isPlaying = currentMediaItem?.id == song.uri;
+          final playbackState = ref.watch(playbackStateProvider).value;
+
+          return Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 8),
+            child: _buildTrackTile(song, isPlaying, playbackState, handler),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTrackTile(NativeSongModel song, bool isPlaying, PlaybackState? playbackState, FamsicAudioHandler handler) {
+    return GestureDetector(
+      onTap: () async {
+        final currentSong = ref.read(currentSongProvider).value;
+        // Use the passed playbackState or read it fresh
+        final currentPlaybackState = ref.read(playbackStateProvider).value;
+        
+        // SYNC: Update active playlist so Library carousel matches this folder
+        final folderPath = song.data.substring(0, song.data.lastIndexOf('/'));
+        final folderSongs = ref.read(folderSongsProvider(folderPath));
+        ref.read(activePlaylistProvider.notifier).setPlaylist(folderSongs);
+
+        if (currentSong?.id == song.uri) {
+          // Same song, toggle playback
+          if (currentPlaybackState?.playing ?? false) {
+            await handler.pause();
+          } else {
+            await handler.play();
+          }
+        } else {
+          // Different song, handle queue and skip
+          final mediaItems = await _getMediaItemsForFolder(folderPath);
+          
+          // Efficiently update queue only if modified
+          final currentQueue = handler.queue.value;
+          bool needsUpdate = currentQueue.length != mediaItems.length;
+          if (!needsUpdate) {
+            for (int i = 0; i < mediaItems.length; i++) {
+              if (mediaItems[i].id != currentQueue[i].id) {
+                needsUpdate = true;
+                break;
+              }
+            }
+          }
+
+          if (needsUpdate) {
+            await handler.updateQueue(mediaItems);
+          }
+
+          final index = mediaItems.indexWhere((item) => item.id == song.uri);
+          if (index != -1) {
+            await handler.skipToQueueItem(index);
+            await handler.play();
+          }
+        }
+
+        // REMOVED: auto-navigate to Library
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isPlaying ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isPlaying ? [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+          ] : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isPlaying ? AppTheme.neonCyan.withOpacity(0.1) : Colors.black.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    isPlaying 
+                      ? (playbackState?.playing ?? false ? LucideIcons.pause : LucideIcons.play) 
+                      : LucideIcons.music,
+                    size: 14,
+                    color: isPlaying ? AppTheme.neonCyan : AppTheme.secondaryGrey,
+                  ),
                 ),
-                child: Icon(
-                  _getFolderIcon(folder['name']),
-                  color: color,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Text Info
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        folder['name'].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                          color: Color(0xFF1A1A1A),
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: isPlaying ? FontWeight.w900 : FontWeight.w600,
+                          color: AppTheme.deepDark,
                         ),
                       ),
-                      const SizedBox(height: 4),
                       Text(
-                        '${folder['count']} TRACKS',
-                        style: TextStyle(
+                        song.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
                           fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black.withOpacity(0.4),
-                          letterSpacing: 1.5,
+                          color: AppTheme.secondaryGrey,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              // Arrow
-              Padding(
-                padding: const EdgeInsets.only(right: 20),
-                child: Icon(
-                  Icons.arrow_forward_ios,
-                  size: 14,
-                  color: Colors.black.withOpacity(0.2),
-                ),
-              ),
+                if (isPlaying)
+                  const AnimatedBarChart(),
+              ],
+            ),
+            if (isPlaying) ...[
+              const SizedBox(height: 8),
+              const SleekListProgress(),
             ],
-          ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<List<MediaItem>> _getMediaItemsForFolder(String folderPath) async {
+    final songs = ref.read(folderSongsProvider(folderPath));
+    return songs.map((s) => s.toMediaItem()).toList();
   }
 
   IconData _getFolderIcon(String name) {
@@ -462,6 +646,97 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A real-time animated bar chart that reflects frequency data from the audio handler.
+class AnimatedBarChart extends ConsumerWidget {
+  const AnimatedBarChart({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visualizerData = ref.watch(visualizerStreamProvider).value ?? [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+    
+    // We take a subset of the 7 buckets for a small icon (e.g., 3-4 bars)
+    final displayBuckets = [
+      visualizerData[1], // Low-mid
+      visualizerData[3], // Mid
+      visualizerData[5], // High-mid
+    ];
+
+    return SizedBox(
+      height: 14,
+      width: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: displayBuckets.map((val) {
+          // Normalize and scale the value for the 14px height
+          final height = (val * 14).clamp(3.0, 14.0);
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 3,
+            height: height,
+            decoration: BoxDecoration(
+              color: AppTheme.neonCyan,
+              borderRadius: BorderRadius.circular(1),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.neonCyan.withOpacity(0.3),
+                  blurRadius: 2,
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+/// An ultra-sleek, minimalist progress bar for the folder track list.
+class SleekListProgress extends ConsumerWidget {
+  const SleekListProgress({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final position = ref.watch(positionProvider).value ?? Duration.zero;
+    final duration = ref.watch(durationProvider).value ?? Duration.zero;
+    final progress = duration.inMilliseconds > 0 
+        ? position.inMilliseconds / duration.inMilliseconds 
+        : 0.0;
+
+    return Stack(
+      children: [
+        // Background Track
+        Container(
+          height: 2,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+        // Active Progress
+        FractionallySizedBox(
+          widthFactor: progress.clamp(0.0, 1.0),
+          child: Container(
+            height: 2,
+            decoration: BoxDecoration(
+              color: AppTheme.neonCyan,
+              borderRadius: BorderRadius.circular(1),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.neonCyan.withOpacity(0.4),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

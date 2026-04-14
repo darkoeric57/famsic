@@ -29,6 +29,7 @@ class EqualizerState {
   final int bassStrength; // 0–1000
   final int loudnessGainMb; // 0–1000 millibels extra gain
   final String activePreset; // 'Flat','Bass','Rock','Pop','Classical','Custom'
+  final String lastSelectedPreset; // The base preset to return to
   final bool initialized;
 
   EqualizerState({
@@ -39,6 +40,7 @@ class EqualizerState {
     this.bassStrength = 0,
     this.loudnessGainMb = 0,
     this.activePreset = 'Flat',
+    this.lastSelectedPreset = 'Flat',
     this.initialized = false,
   });
 
@@ -50,6 +52,7 @@ class EqualizerState {
     int? bassStrength,
     int? loudnessGainMb,
     String? activePreset,
+    String? lastSelectedPreset,
     bool? initialized,
   }) {
     return EqualizerState(
@@ -60,6 +63,7 @@ class EqualizerState {
       bassStrength: bassStrength ?? this.bassStrength,
       loudnessGainMb: loudnessGainMb ?? this.loudnessGainMb,
       activePreset: activePreset ?? this.activePreset,
+      lastSelectedPreset: lastSelectedPreset ?? this.lastSelectedPreset,
       initialized: initialized ?? this.initialized,
     );
   }
@@ -86,8 +90,10 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   static const _pBass = 'eq_bass_strength';
   static const _pLoudness = 'eq_loudness_gain';
   static const _pPreset = 'eq_preset';
+  static const _pLastPreset = 'eq_last_preset';
   static const _pEnabled = 'eq_enabled';
   static const _pBands = 'eq_bands';
+  static const _pCustomBands = 'eq_custom_bands';
 
   @override
   EqualizerState build() => EqualizerState();
@@ -103,6 +109,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       final savedBass = prefs.getInt(_pBass) ?? 0;
       final savedLoudness = prefs.getInt(_pLoudness) ?? 0;
       final savedPreset = prefs.getString(_pPreset) ?? 'Flat';
+      final savedLastPreset = prefs.getString(_pLastPreset) ?? 'Flat';
       final savedEnabled = prefs.getBool(_pEnabled) ?? true;
       final savedBandLevels = prefs.getStringList(_pBands);
 
@@ -144,6 +151,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
         bassStrength: savedBass,
         loudnessGainMb: savedLoudness,
         activePreset: savedPreset,
+        lastSelectedPreset: savedLastPreset,
         initialized: true,
       );
     } catch (e) {
@@ -155,17 +163,51 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   Future<void> setBandLevel(int bandIndex, int levelMb) async {
     try {
       await _ch.invokeMethod('setBandLevel', {'band': bandIndex, 'level': levelMb});
+      if (!state.enabled) {
+        await setEnabled(true);
+      }
       final newBands = state.bands
           .map((b) => b.index == bandIndex ? b.copyWith(levelMb: levelMb) : b)
           .toList();
       state = state.copyWith(bands: newBands, activePreset: 'Custom');
       await _persistBands(newBands);
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pPreset, 'Custom');
+      await prefs.setStringList(_pCustomBands, newBands.map((e) => e.levelMb.toString()).toList());
     } catch (e) {
       print('EqualizerNotifier.setBandLevel error: $e');
     }
   }
 
   Future<void> applyPreset(String presetName) async {
+    if (presetName == 'Custom') {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final customBandsStr = prefs.getStringList(_pCustomBands);
+        
+        List<EqBand> newBands;
+        if (customBandsStr != null && customBandsStr.length == state.bands.length) {
+          final levels = customBandsStr.map(int.parse).toList();
+          await _ch.invokeMethod('applyBands', {'levels': levels});
+          newBands = state.bands
+              .asMap()
+              .entries
+              .map((e) => e.value.copyWith(levelMb: levels[e.key]))
+              .toList();
+        } else {
+          newBands = state.bands;
+        }
+        
+        state = state.copyWith(bands: newBands, activePreset: 'Custom');
+        await prefs.setString(_pPreset, 'Custom');
+        await _persistBands(newBands);
+      } catch (e) {
+        print('EqualizerNotifier.applyPreset(Custom) error: $e');
+      }
+      return;
+    }
+
     final levels = eqPresets[presetName];
     if (levels == null) return;
     try {
@@ -183,10 +225,15 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
           })
           .toList();
 
-      state = state.copyWith(bands: newBands, activePreset: presetName);
+      state = state.copyWith(
+        bands: newBands, 
+        activePreset: presetName,
+        lastSelectedPreset: presetName,
+      );
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_pPreset, presetName);
+      await prefs.setString(_pLastPreset, presetName);
       await _persistBands(newBands);
     } catch (e) {
       print('EqualizerNotifier.applyPreset error: $e');
@@ -241,6 +288,21 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   Future<void> _persistBands(List<EqBand> bands) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_pBands, bands.map((b) => b.levelMb.toString()).toList());
+  }
+
+  Future<void> nextPreset() async {
+    final keys = [...eqPresets.keys, 'Custom'];
+    final currentIndex = keys.indexOf(state.activePreset);
+    final nextIndex = (currentIndex + 1) % keys.length;
+    await applyPreset(keys[nextIndex]);
+  }
+
+  Future<void> previousPreset() async {
+    final keys = [...eqPresets.keys, 'Custom'];
+    final currentIndex = keys.indexOf(state.activePreset);
+    final effectiveIndex = currentIndex == -1 ? keys.length - 1 : currentIndex;
+    final prevIndex = (effectiveIndex - 1 + keys.length) % keys.length;
+    await applyPreset(keys[prevIndex]);
   }
 }
 

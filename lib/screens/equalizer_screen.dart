@@ -111,12 +111,18 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                 // Mini Player
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.surfaceLight,
+                    border: Border(
+                      top: BorderSide(
+                        color: AppTheme.secondaryGrey.withValues(alpha: 0.1),
+                        width: 1.0,
+                      ),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 12,
-                        offset: const Offset(0, -4),
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -5),
                       ),
                     ],
                   ),
@@ -133,21 +139,9 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
   Widget _buildBassLoudnessSection(EqualizerState eq) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppTheme.deepDark,
-        borderRadius: BorderRadius.circular(36),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.accentNeon.withValues(alpha: 0.08),
-            blurRadius: 30,
-            spreadRadius: 2,
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+      decoration: AppTheme.pathfinderDarkDecoration(
+        borderRadius: 36,
+        borderWidth: 2.0,
       ),
       child: Column(
         children: [
@@ -155,7 +149,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
           Text(
             'SOUND ENHANCE',
             style: GoogleFonts.outfit(
-                color: AppTheme.secondaryGrey,
+                color: Colors.white60,
                 fontSize: 10,
                 letterSpacing: 2,
                 fontWeight: FontWeight.w600),
@@ -182,7 +176,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
               Container(
                 width: 1,
                 height: 140,
-                color: Colors.white.withValues(alpha: 0.06),
+                color: AppTheme.deepDark.withValues(alpha: 0.05),
               ),
               _buildDial(
                 label: 'SOUND CLARITY',
@@ -222,7 +216,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
       children: [
         Text(label,
             style: GoogleFonts.outfit(
-                color: AppTheme.secondaryGrey,
+                color: Colors.white70,
                 fontSize: 9,
                 letterSpacing: 1.5,
                 fontWeight: FontWeight.w600)),
@@ -244,6 +238,15 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
+                    // Physical base for the dial
+                    Container(
+                      width: size * 1.05,
+                      height: size * 1.05,
+                      decoration: AppTheme.pathfinderDarkDecoration(
+                        isCircular: true,
+                        borderWidth: 2.0,
+                      ),
+                    ),
                     // Glow behind arc
                     if (normalised > 0)
                       Container(
@@ -268,7 +271,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                       size: const Size(size, size),
                       painter: _ArcPainter(
                         progress: 0,
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: AppTheme.deepDark.withValues(alpha: 0.05),
                         strokeWidth: strokeWidth,
                       ),
                     ),
@@ -288,7 +291,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                         Text(
                           displayValue,
                           style: GoogleFonts.outfit(
-                              color: Colors.white,
+                              color: AppTheme.neonCyan,
                               fontSize: 16,
                               fontWeight: FontWeight.bold),
                         ),
@@ -315,7 +318,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               activeTrackColor: color,
-              inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
+              inactiveTrackColor: AppTheme.deepDark.withValues(alpha: 0.05),
               thumbColor: color,
               overlayColor: color.withValues(alpha: 0.2),
             ),
@@ -336,52 +339,43 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
       height: 42,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        children: eqPresets.keys.map((name) {
-          final isSelected = eq.activePreset == name;
-          return GestureDetector(
-            onTap: () =>
-                ref.read(equalizerProvider.notifier).applyPreset(name),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 10),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.deepDark : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isSelected
-                      ? AppTheme.accentNeon
-                      : Colors.transparent,
-                  width: 1.5,
-                ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: AppTheme.accentNeon.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 4,
-                        ),
-                      ],
+        children: [
+          ...eqPresets.keys.map((name) {
+            final isSelected = eq.activePreset == name;
+            return _buildPresetChip(name, isSelected);
+          }),
+          _buildPresetChip('Custom', eq.activePreset == 'Custom'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPresetChip(String name, bool isSelected) {
+    return GestureDetector(
+      onTap: () => ref.read(equalizerProvider.notifier).applyPreset(name),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
+        decoration: isSelected
+            ? AppTheme.pathfinderDarkDecoration(
+                borderRadius: 22,
+                borderWidth: 2.5,
+                rimColor: AppTheme.neonCyan.withOpacity(0.5),
+              )
+            : AppTheme.pathfinderDarkDecoration(
+                borderRadius: 22,
+                borderWidth: 1.5,
               ),
-              child: Text(
-                name.toUpperCase(),
-                style: GoogleFonts.outfit(
-                  color: isSelected ? AppTheme.accentNeon : AppTheme.deepDark,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          );
-        }).toList(),
+        child: Text(
+          name.toUpperCase(),
+          style: GoogleFonts.outfit(
+            color: isSelected ? AppTheme.neonCyan : Colors.white60,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            fontSize: 11,
+            letterSpacing: 0.5,
+          ),
+        ),
       ),
     );
   }
@@ -396,17 +390,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
 
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 32, borderWidth: 2.0),
       child: Column(
         children: [
           Row(
@@ -415,21 +399,29 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
               Text(
                 'EQUALIZER BANDS',
                 style: GoogleFonts.outfit(
-                    color: AppTheme.secondaryGrey,
+                    color: Colors.white60,
                     fontSize: 10,
                     letterSpacing: 1.5,
                     fontWeight: FontWeight.w600),
               ),
               GestureDetector(
                 onTap: () =>
-                    ref.read(equalizerProvider.notifier).applyPreset('Flat'),
-                child: Text(
-                  'RESET',
-                  style: GoogleFonts.outfit(
-                      color: AppTheme.accentNeon,
-                      fontSize: 10,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.bold),
+                    ref.read(equalizerProvider.notifier).applyPreset(eq.lastSelectedPreset),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.neonCyan.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.neonCyan.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    'RESET TO ${eq.lastSelectedPreset.toUpperCase()}',
+                    style: GoogleFonts.outfit(
+                        color: AppTheme.neonCyan,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -528,16 +520,13 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                       const RoundSliderThumbShape(enabledThumbRadius: 8),
                   overlayShape:
                       const RoundSliderOverlayShape(overlayRadius: 14),
-                  activeTrackColor: isPositive
-                      ? AppTheme.accentNeon
-                      : Colors.redAccent,
-                  inactiveTrackColor:
-                      AppTheme.secondaryGrey.withValues(alpha: 0.15),
+                  activeTrackColor: AppTheme.neonCyan,
+                  inactiveTrackColor: Colors.white10,
                   thumbColor: Colors.white,
                   overlayColor:
-                      AppTheme.accentNeon.withValues(alpha: 0.2),
+                      AppTheme.neonCyan.withValues(alpha: 0.2),
                   valueIndicatorTextStyle:
-                      GoogleFonts.outfit(color: Colors.white, fontSize: 10),
+                      GoogleFonts.outfit(color: AppTheme.deepDark, fontSize: 10),
                   showValueIndicator: ShowValueIndicator.onDrag,
                 ),
                 child: Slider(
@@ -546,11 +535,9 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                   value: level,
                   divisions: 30,
                   label: '${(level / 100).toStringAsFixed(1)}dB',
-                  onChanged: eq.enabled
-                      ? (v) => ref
-                          .read(equalizerProvider.notifier)
-                          .setBandLevel(band.index, v.round())
-                      : null,
+                  onChanged: (v) => ref
+                      .read(equalizerProvider.notifier)
+                      .setBandLevel(band.index, v.round()),
                 ),
               ),
             ),
@@ -566,16 +553,14 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
     final values = [0.0, 0.0, 0.0, 0.0, 0.0];
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
+      decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 32, borderWidth: 1.5),
       child: Column(
         children: [
-          Text('EQUALIZER BANDS',
+          Text('PLAY A TRACK TO ACTIVATE EQUALIZER',
               style: GoogleFonts.outfit(
-                  color: AppTheme.secondaryGrey,
+                  color: AppTheme.neonCyan,
                   fontSize: 10,
+                  fontWeight: FontWeight.bold,
                   letterSpacing: 1.5)),
           const SizedBox(height: 20),
           SizedBox(
@@ -589,11 +574,20 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen>
                       Expanded(
                         child: RotatedBox(
                           quarterTurns: -1,
-                          child: Slider(
-                            min: -1500,
-                            max: 1500,
-                            value: values[e.key],
-                            onChanged: null,
+                          child: SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                              activeTrackColor: AppTheme.secondaryGrey.withValues(alpha: 0.3),
+                              inactiveTrackColor: AppTheme.secondaryGrey.withValues(alpha: 0.1),
+                              thumbColor: AppTheme.secondaryGrey,
+                            ),
+                            child: Slider(
+                              min: -1500,
+                              max: 1500,
+                              value: values[e.key],
+                              onChanged: null,
+                            ),
                           ),
                         ),
                       ),

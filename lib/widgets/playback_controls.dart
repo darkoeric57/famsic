@@ -16,22 +16,43 @@ class PlaybackControls extends ConsumerWidget {
     final handler = ref.watch(audioHandlerProvider);
 
     if (isMini) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(Icons.skip_previous, color: AppTheme.deepDark, size: 28),
-            onPressed: handler.skipToPrevious,
+      return GestureDetector(
+        onTap: playing ? handler.pause : handler.play,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.surfaceLight,
+            border: Border.all(
+              color: AppTheme.neonCyan.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.neonCyan.withValues(alpha: 0.1),
+                blurRadius: 10,
+              ),
+            ],
           ),
-          IconButton(
-            icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: AppTheme.deepDark, size: 30),
-            onPressed: playing ? handler.pause : handler.play,
+          child: Consumer(
+            builder: (context, ref, _) {
+              return TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: playing ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOutBack,
+                builder: (context, value, child) {
+                  return AnimatedIcon(
+                    icon: AnimatedIcons.play_pause,
+                    progress: AlwaysStoppedAnimation(value),
+                    color: AppTheme.neonCyan,
+                    size: 24,
+                  );
+                },
+              );
+            },
           ),
-          IconButton(
-            icon: Icon(Icons.skip_next, color: AppTheme.deepDark, size: 28),
-            onPressed: handler.skipToNext,
-          ),
-        ],
+        ),
       );
     }
 
@@ -53,7 +74,6 @@ class PlaybackControls extends ConsumerWidget {
             } else {
               final current = ref.read(currentSongProvider).value;
               if (current == null) {
-                // Pick the first song if none selected
                 final songsAsync = ref.read(songListProvider);
                 songsAsync.whenData((songs) async {
                   if (songs.isNotEmpty) {
@@ -105,32 +125,20 @@ class _NeumorphicButton extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
-        decoration: AppTheme.neumorphicDecoration(
-          borderRadius: size / 2,
-        ).copyWith(
-          // Ensure clean neumorphic surface
-          boxShadow: [
-            BoxShadow(
-              color: Colors.white,
-              offset: const Offset(-5, -5),
-              blurRadius: 10,
-            ),
-            BoxShadow(
-              color: const Color(0xFFAEB2B9).withOpacity(0.4),
-              offset: const Offset(5, 5),
-              blurRadius: 10,
-            ),
-          ],
+        decoration: AppTheme.pathfinderDarkDecoration(
+          isCircular: true,
+          borderWidth: isMain ? 3.0 : 2.2,
+          rimColor: const Color(0xFF6F5F4B), // Premium Golden-Brown
         ),
         child: Center(
           child: Icon(
             icon,
-            color: AppTheme.neonCyan,
-            size: size * (isMain ? 0.5 : 0.4),
+            color: isMain ? AppTheme.neonCyan : Colors.white70,
+            size: size * (isMain ? 0.5 : 0.45),
             shadows: [
               Shadow(
-                color: AppTheme.neonCyan.withOpacity(0.8),
-                blurRadius: isMain ? 20 : 12, // Icon-only glow
+                color: AppTheme.neonCyan.withValues(alpha: 0.8),
+                blurRadius: isMain ? 20 : 12,
               ),
             ],
           ),
