@@ -14,6 +14,7 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   // Settings state mirrored from SettingsProvider
   bool _gapless = true;
   double _lastVolume = 1.0;
+  bool _isUpdatingSource = false;
 
   FamsicAudioHandler() {
     _init();
@@ -25,7 +26,8 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     // Listen for current index changes to update mediaItem
     _player.currentIndexStream.listen((index) {
-      if (index != null && queue.value.isNotEmpty) {
+      if (_isUpdatingSource) return; // Prevent "Track 0" flash during queue swaps/seeks
+      if (index != null && index >= 0 && index < queue.value.length) {
         mediaItem.add(queue.value[index]);
       }
     });
@@ -132,8 +134,23 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    await _player.seek(Duration.zero, index: index);
-    play();
+    try {
+      _isUpdatingSource = true;
+      
+      // Pre-emptively update mediaItem to prevent currentSongProvider 
+      // from briefly selecting Track 0 while the player seeks.
+      if (index >= 0 && index < queue.value.length) {
+        mediaItem.add(queue.value[index]);
+      }
+
+      await _player.seek(Duration.zero, index: index);
+      play();
+      
+      _isUpdatingSource = false;
+    } catch (e) {
+      _isUpdatingSource = false;
+      print('FamsicAudioHandler: skipToQueueItem error — $e');
+    }
   }
 
   @override
@@ -148,20 +165,35 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   @override
-  Future<void> updateQueue(List<MediaItem> queue) async {
+  Future<void> updateQueue(List<MediaItem> queue, {int initialIndex = 0}) async {
     if (queue.isEmpty) return;
     try {
-      await _playlist.clear();
+      _isUpdatingSource = true;
+      
+      // Update our internal queue State
+      this.queue.add(queue);
+
+      // Pre-emptively set the target media item to prevent currentSongProvider 
+      // from briefly selecting Track 0 while the player is loading the new source.
+      if (initialIndex < queue.length) {
+        mediaItem.add(queue[initialIndex]);
+      }
+
+      // Create new audio sources
       final audioSources =
           queue.map((item) => AudioSource.uri(Uri.parse(item.id))).toList();
-      await _playlist.addAll(audioSources);
-      this.queue.add(queue);
+
+      // setAudioSource with a NEW ConcatenatingAudioSource 
+      // ensures an atomic transition to the new folder/list
       await _player.setAudioSource(
-        _playlist,
-        initialIndex: 0,
+        ConcatenatingAudioSource(children: audioSources),
+        initialIndex: initialIndex,
         initialPosition: Duration.zero,
       );
+      
+      _isUpdatingSource = false;
     } catch (e) {
+      _isUpdatingSource = false;
       print('FamsicAudioHandler: updateQueue error — $e');
     }
   }

@@ -15,7 +15,14 @@ final musicServiceProvider = Provider((ref) => MusicService());
 final songListProvider = FutureProvider<List<NativeSongModel>>((ref) async {
   final service = ref.watch(musicServiceProvider);
   final settings = ref.watch(settingsProvider);
-  return service.fetchLocalSongs(scanPaths: settings.scanPaths);
+  final allSongs = await service.fetchLocalSongs(scanPaths: settings.scanPaths);
+  
+  // Filter out songs in hidden paths
+  if (settings.hiddenPaths.isEmpty) return allSongs;
+  
+  return allSongs.where((song) {
+    return !settings.hiddenPaths.any((hiddenPath) => song.data.startsWith(hiddenPath));
+  }).toList();
 });
 
 final playbackStateProvider = StreamProvider<PlaybackState>((ref) {
@@ -54,45 +61,71 @@ final audioSessionIdProvider = StreamProvider<int?>((ref) {
 });
 
 /// Extracts unique folders with track counts from the loaded song list.
-final foldersProvider = Provider<List<Map<String, dynamic>>>((ref) {
-  final songsAsync = ref.watch(songListProvider);
-  return songsAsync.when(
-    data: (songs) {
-      final folderMap = <String, int>{};
-      for (final song in songs) {
-        final parts = song.data.split('/');
-        if (parts.length > 1) {
-          final folderPath = parts.sublist(0, parts.length - 1).join('/');
-          folderMap[folderPath] = (folderMap[folderPath] ?? 0) + 1;
-        }
+/// Uses a Notifier to allow optimistic updates and avoid UI flashing during refreshes.
+class FoldersNotifier extends Notifier<List<Map<String, dynamic>>> {
+  @override
+  List<Map<String, dynamic>> build() {
+    final songsAsync = ref.watch(songListProvider);
+    // Watch hiddenPaths directly to trigger synchronous rebuilds when they change
+    final hiddenPaths = ref.watch(settingsProvider.select((s) => s.hiddenPaths));
+    
+    // Safely check for data. During loading/refreshing, Riverpod may still provide
+    // the previous value. We apply the hiddenPaths filter manually to ensure
+    // the UI immediately reflects the dismissal even before the fetch completes.
+    if (songsAsync.hasValue) {
+      final processed = _processFolders(songsAsync.value!);
+      return processed.where((f) => !hiddenPaths.contains(f['path'])).toList();
+    }
+
+    try {
+      // During background refreshes, we return the current state but 
+      // apply the hiddenPaths filter to ensure optimistic removals persist.
+      return state.where((f) => !hiddenPaths.contains(f['path'])).toList();
+    } catch (_) {
+      // First build or state unavailable
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _processFolders(List<NativeSongModel> songs) {
+    final folderMap = <String, int>{};
+    for (final song in songs) {
+      final parts = song.data.split('/');
+      if (parts.length > 1) {
+        final folderPath = parts.sublist(0, parts.length - 1).join('/');
+        folderMap[folderPath] = (folderMap[folderPath] ?? 0) + 1;
       }
-      
-      final folders = folderMap.entries.map((e) {
-        final path = e.key;
-        final name = path.split('/').last;
-        return {
-          'path': path,
-          'name': name,
-          'count': e.value,
-        };
-      }).toList();
-      
-      folders.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
-      return folders;
-    },
-    loading: () => [],
-    error: (_, __) => [],
-  );
-});
+    }
+    
+    final folders = folderMap.entries.map((e) {
+      final path = e.key;
+      final name = path.split('/').last;
+      return {
+        'path': path,
+        'name': name,
+        'count': e.value,
+      };
+    }).toList();
+    
+    folders.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    return folders;
+  }
+
+  /// Optimistically removes a folder from the UI.
+  /// This ensures that Dismissible animations are smooth and don't throw tree-sync errors.
+  void removeFolderOptimistically(String path) {
+    state = state.where((f) => f['path'] != path).toList();
+  }
+}
+
+final foldersProvider = NotifierProvider<FoldersNotifier, List<Map<String, dynamic>>>(FoldersNotifier.new);
 
 /// Returns songs filtered by their parent directory path.
+/// Uses .value ?? [] to prevent list flickering during background re-scans.
 final folderSongsProvider = Provider.family<List<NativeSongModel>, String>((ref, folderPath) {
   final songsAsync = ref.watch(songListProvider);
-  return songsAsync.when(
-    data: (songs) => songs.where((s) => s.data.startsWith(folderPath)).toList(),
-    loading: () => [],
-    error: (_, __) => [],
-  );
+  final songs = songsAsync.value ?? [];
+  return songs.where((s) => s.data.startsWith(folderPath)).toList();
 });
 
 final artworkProvider = FutureProvider.family<Uint8List?, String>((ref, uri) async {

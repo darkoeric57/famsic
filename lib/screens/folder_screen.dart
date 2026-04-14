@@ -12,6 +12,7 @@ import '../core/music_service.dart';
 import '../core/famsic_audio_handler.dart';
 import '../core/native_song_model.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../widgets/visualizer_styles.dart';
 
 class FolderScreen extends ConsumerStatefulWidget {
   const FolderScreen({super.key});
@@ -55,11 +56,14 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
           if (_fxEnabled) _buildBackgroundVisualizer(),
 
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                    const SizedBox(height: 10),
                   // Header Title
                   Text(
@@ -98,27 +102,80 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                   const SizedBox(height: 12),
                   _buildActiveFolderTags(ref),
                   
-                  const SizedBox(height: 20),
-
-                  // Folders List
-                  Expanded(
-                    child: folders.isEmpty
-                        ? _buildEmptyState()
-                        : ListView.builder(
-                            padding: const EdgeInsets.only(bottom: 100),
-                            itemCount: folders.length,
-                            itemBuilder: (context, index) {
-                              final folder = folders[index];
-                              return _buildFolderExplorerItem(folder, index);
-                            },
-                          ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 20),
+
+                // Folders List
+                Expanded(
+                  child: folders.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 100),
+                          itemCount: folders.length,
+                          itemBuilder: (context, index) {
+                            final folder = folders[index];
+                            final isExpanded = _expandedPath == folder['path'];
+                            return _buildDismissibleFolder(folder, index, ref, isExpanded);
+                          },
+                        ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDismissibleFolder(Map<String, dynamic> folder, int index, WidgetRef ref, bool isExpanded) {
+    return Dismissible(
+      key: Key('folder_${folder['path']}'),
+      direction: isExpanded ? DismissDirection.none : DismissDirection.endToStart,
+      onDismissed: (direction) {
+        final path = folder['path'] as String;
+        // 1. Optimistically remove from UI for smooth sliding animation
+        ref.read(foldersProvider.notifier).removeFolderOptimistically(path);
+        
+        // 2. Persist to hidden paths. This will trigger FoldersNotifier to rebuild 
+        // and filter this path out permanently, even during provider refreshes.
+        ref.read(settingsProvider.notifier).addHiddenPath(path);
+        
+        // songListProvider automatically refreshes because it watches settingsProvider
+      },
+      confirmDismiss: (direction) async {
+        return await _showDeleteFolderConfirmation(context, ref, folder['name'], folder['path']);
+      },
+      background: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(color: Colors.red.withOpacity(0.3), blurRadius: 15, spreadRadius: 2),
+          ],
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 32),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'DELETING FOLDER: ${folder['name'].toUpperCase()}',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(width: 16),
+            const Icon(LucideIcons.trash2, color: Colors.white, size: 22),
+          ],
+        ),
+      ),
+      child: _buildFolderExplorerItem(folder, index),
     );
   }
 
@@ -382,7 +439,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
         });
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         decoration: AppTheme.neumorphicDecoration(
           borderRadius: 24,
         ),
@@ -396,7 +453,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                   duration: const Duration(milliseconds: 300),
                   width: 4,
                   decoration: BoxDecoration(
-                    color: isExpanded ? color : color.withOpacity(0.5),
+                    color: isExpanded ? color : color.withOpacity(0.4),
                     boxShadow: isExpanded ? [BoxShadow(color: color, blurRadius: 10, spreadRadius: 1)] : [],
                   ),
                 ),
@@ -405,12 +462,13 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: color.withOpacity(0.2)),
                   ),
                   child: Icon(
                     _getFolderIcon(folder['name']),
-                    color: color,
+                    color: isExpanded ? color : color.withOpacity(0.8),
                     size: 24,
                   ),
                 ),
@@ -424,6 +482,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                       children: [
                         Text(
                           folder['name'].toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
@@ -431,23 +491,48 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                             color: AppTheme.deepDark,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${folder['count']} TRACKS',
-                          style: GoogleFonts.outfit(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.secondaryGrey,
-                            letterSpacing: 1.5,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              '${folder['count']} TRACKS',
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.secondaryGrey,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                            if (isExpanded) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () {
+                                  _syncController.forward(from: 0);
+                                  ref.invalidate(songListProvider);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    LucideIcons.refreshCcw,
+                                    size: 10,
+                                    color: color,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
+
                 // Animated Arrow
                 Padding(
-                  padding: const EdgeInsets.only(right: 20),
+                  padding: const EdgeInsets.only(right: 24),
                   child: AnimatedRotation(
                     turns: isExpanded ? 0.25 : 0, // 90 degrees
                     duration: const Duration(milliseconds: 300),
@@ -455,7 +540,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
                     child: Icon(
                       Icons.arrow_forward_ios,
                       size: 14,
-                      color: AppTheme.secondaryGrey,
+                      color: AppTheme.secondaryGrey.withOpacity(0.5),
                     ),
                   ),
                 ),
@@ -530,14 +615,11 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
             }
           }
 
-          if (needsUpdate) {
-            await handler.updateQueue(mediaItems);
-          }
-
           final index = mediaItems.indexWhere((item) => item.id == song.uri);
-          if (index != -1) {
+          if (needsUpdate) {
+            await handler.updateQueue(mediaItems, initialIndex: index != -1 ? index : 0);
+          } else if (index != -1) {
             await handler.skipToQueueItem(index);
-            await handler.play();
           }
         }
 
@@ -612,6 +694,35 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
         ),
       ),
     );
+  }
+
+  Future<bool> _showDeleteFolderConfirmation(BuildContext context, WidgetRef ref, String name, String path) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.creamBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: Text(
+          'REMOVE FOLDER?',
+          style: GoogleFonts.monoton(fontSize: 18, color: AppTheme.deepDark),
+        ),
+        content: Text(
+          'This will remove "${name.toUpperCase()}" from your music explorer. The files will not be deleted.',
+          style: GoogleFonts.outfit(color: AppTheme.secondaryGrey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('CANCEL', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppTheme.secondaryGrey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('REMOVE', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<List<MediaItem>> _getMediaItemsForFolder(String folderPath) async {

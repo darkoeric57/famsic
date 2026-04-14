@@ -15,6 +15,7 @@ class SettingsState {
   final int stereoStrength; // 0-1000
   final bool visualizerEnabled;
   final String visualizerStyle;
+  final List<String> hiddenPaths;
 
   SettingsState({
     this.scanPaths = const [],
@@ -30,6 +31,7 @@ class SettingsState {
     this.stereoStrength = 0,
     this.visualizerEnabled = true,
     this.visualizerStyle = 'Neon Bars',
+    this.hiddenPaths = const [],
   });
 
   SettingsState copyWith({
@@ -46,6 +48,7 @@ class SettingsState {
     int? stereoStrength,
     bool? visualizerEnabled,
     String? visualizerStyle,
+    List<String>? hiddenPaths,
   }) {
     return SettingsState(
       scanPaths: scanPaths ?? this.scanPaths,
@@ -61,6 +64,7 @@ class SettingsState {
       stereoStrength: stereoStrength ?? this.stereoStrength,
       visualizerEnabled: visualizerEnabled ?? this.visualizerEnabled,
       visualizerStyle: visualizerStyle ?? this.visualizerStyle,
+      hiddenPaths: hiddenPaths ?? this.hiddenPaths,
     );
   }
 }
@@ -85,6 +89,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _stereoStrengthKey = 'stereo_strength';
   static const _visualizerEnabledKey = 'visualizer_enabled';
   static const _visualizerStyleKey = 'visualizer_style';
+  static const _hiddenPathsKey = 'hidden_paths_list';
 
   Future<void> _loadSettings() async {
     state = state.copyWith(isLoading: true);
@@ -114,6 +119,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       stereoStrength: prefs.getInt(_stereoStrengthKey) ?? 0,
       visualizerEnabled: prefs.getBool(_visualizerEnabledKey) ?? true,
       visualizerStyle: prefs.getString(_visualizerStyleKey) ?? 'Neon Bars',
+      hiddenPaths: prefs.getStringList(_hiddenPathsKey) ?? [],
     );
   }
 
@@ -197,6 +203,21 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_visualizerStyleKey, value);
     state = state.copyWith(visualizerStyle: value);
+  }
+  
+  Future<void> addHiddenPath(String path) async {
+    if (state.hiddenPaths.contains(path)) return;
+    final newPaths = [...state.hiddenPaths, path];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenPathsKey, newPaths);
+    state = state.copyWith(hiddenPaths: newPaths);
+  }
+
+  Future<void> removeHiddenPath(String path) async {
+    final newPaths = state.hiddenPaths.where((p) => p != path).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenPathsKey, newPaths);
+    state = state.copyWith(hiddenPaths: newPaths);
   }
 }
 
