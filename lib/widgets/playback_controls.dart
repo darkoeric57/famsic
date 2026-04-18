@@ -78,12 +78,12 @@ class PlaybackControls extends ConsumerWidget {
                 songsAsync.whenData((songs) async {
                   if (songs.isNotEmpty) {
                     final mediaItems = songs.map((s) => MediaItem(
-                      id: s.uri,
+                      id: s.data, // Real file path for C++ engine
                       title: s.title,
                       artist: s.artist,
                       album: s.album,
                       duration: Duration(milliseconds: s.duration),
-                      extras: {'id': s.id, 'albumId': s.albumId},
+                      extras: {'uri': s.uri, 'id': s.id, 'albumId': s.albumId},
                     )).toList();
                     await handler.updateQueue(mediaItems);
                     await handler.skipToQueueItem(0);

@@ -40,13 +40,14 @@ class NativeSongModel {
 
   MediaItem toMediaItem() {
     return MediaItem(
-      id: uri, // Use content URI for playback
+      id: data, // Use real file path so C++ engine can open it via ma_decoder_init_file
       title: title,
       artist: artist,
       album: album,
       duration: Duration(milliseconds: duration),
       extras: {
-        'data': data,
+        'uri': uri,   // content URI kept for artwork lookups
+        'data': data, // redundant but explicit
         'id': id,
         'albumId': albumId,
       },

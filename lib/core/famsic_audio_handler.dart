@@ -1,210 +1,103 @@
 import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:audio_session/audio_session.dart';
-import 'package:flutter/services.dart';
+import 'package:rxdart/rxdart.dart';
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ffi';
+import 'package:ffi/ffi.dart';
+import '../audio_engine/audio_engine_bindings.dart';
 
 class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer();
-  final _playlist = ConcatenatingAudioSource(children: []);
+  Timer? _pollingTimer;
+  Timer? _visualizerTimer;
   
-  static const _visualizerChannel = EventChannel('com.famsic.app/visualizer');
-  static const _eqChannel = MethodChannel('com.famsic.app/equalizer');
+  final _positionController = BehaviorSubject<Duration>.seeded(Duration.zero);
+  final _durationController = BehaviorSubject<Duration?>.seeded(null);
+  final _volumeController = BehaviorSubject<double>.seeded(1.0);
+  final _playingController = BehaviorSubject<bool>.seeded(false);
+  final _visualizerController = BehaviorSubject<List<double>>.seeded(List<double>.filled(7, 0.0));
+  
+  late final Pointer<Float> _vizPtr;
 
-  // Settings state mirrored from SettingsProvider
-  bool _gapless = true;
-  double _lastVolume = 1.0;
   bool _isUpdatingSource = false;
+  int _currentIndex = 0;
 
   FamsicAudioHandler() {
     _init();
   }
 
   void _init() {
-    // Broadcast playback state changes from just_audio to audio_service
-    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
-
-    // Listen for current index changes to update mediaItem
-    _player.currentIndexStream.listen((index) {
-      if (_isUpdatingSource) return; // Prevent "Track 0" flash during queue swaps/seeks
-      if (index != null && index >= 0 && index < queue.value.length) {
-        mediaItem.add(queue.value[index]);
-      }
-    });
-
-    // Configure AudioSession for best possible quality session type
-    _configureAudioSession();
-
-    // Listen for audio session ID changes to initialize native effects (EQ/Visualizer)
-    _player.androidAudioSessionIdStream.listen((sessionId) {
-      if (sessionId != null) {
-        _initNativeEffects(sessionId);
-      }
-    });
-  }
-
-  Future<void> _configureAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-  }
-
-  Future<void> _initNativeEffects(int sessionId) async {
     try {
-      await _eqChannel.invokeMethod('init', {'sessionId': sessionId});
-    } catch (e) {
-      print('FamsicAudioHandler: Failed to init native effects — $e');
-    }
-  }
+      print('Famsic: Initializing C++ Audio Engine...');
+      final success = audioEngineInstance.initialize();
+      if (!success) {
+        print('Famsic: Native engine failed to initialize.');
+      }
+      _vizPtr = malloc<Float>(7);
+      
+      // Delay polling by 500ms to allow the native stack to settle and avoid the startup native_crash
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_pollingTimer != null || _visualizerTimer != null) return; // Already started
+        
+        _pollingTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+          _pollEngine();
+        });
 
-  /// Stereo Enhancement (Virtualizer/Surround)
-  Future<void> applyStereoEnhancement(bool enabled, int strength) async {
-    try {
-      await _eqChannel.invokeMethod('setVirtualizer', {
-        'strength': enabled ? strength : 0,
+        // Real-time visualizer polling (10Hz is enough for smooth UI transitions with the C++ ballistics)
+        _visualizerTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+          if (_playingController.value) {
+            try {
+              audioEngineInstance.getMagnitudes(_vizPtr);
+              final magnitudes = List<double>.generate(7, (i) => _vizPtr[i].toDouble());
+              _visualizerController.add(magnitudes);
+            } catch (e) {
+              print('Famsic: Visualizer magnitude poll error: $e');
+            }
+          } else {
+            _visualizerController.add(List<double>.filled(7, 0.0));
+          }
+        });
+        print('Famsic: Native polling timers started.');
       });
-    } catch (e) {
-      print('FamsicAudioHandler: applyStereoEnhancement error — $e');
+
+      audioEngineInstance.setVolume(_volumeController.value);
+    } catch (e, stack) {
+      print('Famsic: CRITICAL Error initializing audio engine: $e');
+      print(stack);
     }
   }
 
-  // ─── Settings ────────────────────────────────────────────────────────────
+  void _pollEngine() {
+    if (_isUpdatingSource) return;
 
-  /// Gapless playback: sets silence between tracks to zero or a small gap.
-  void applyGapless(bool enabled) {
-    _gapless = enabled;
-    // just_audio is gapless by default with ConcatenatingAudioSource.
-  }
+    final isPlaying = audioEngineInstance.isPlaying();
+    if (_playingController.value != isPlaying) {
+      _playingController.add(isPlaying);
+      _broadcastState();
+    }
 
-  /// High-quality audio: ensures the player runs at full volume (1.0) with
-  /// no software volume reduction and optimal sampling flags.
-  Future<void> applyHighQuality(bool enabled) async {
-    try {
-      final session = await AudioSession.instance;
-      if (enabled) {
-        // High-fidelity configuration
-        await session.configure(const AudioSessionConfiguration(
-          avAudioSessionCategory: AVAudioSessionCategory.playback,
-          avAudioSessionMode: AVAudioSessionMode.defaultMode,
-          avAudioSessionRouteSharingPolicy:
-              AVAudioSessionRouteSharingPolicy.defaultPolicy,
-          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions(0),
-          androidAudioAttributes: AndroidAudioAttributes(
-            contentType: AndroidAudioContentType.music,
-            flags: AndroidAudioFlags.none,
-            usage: AndroidAudioUsage.media,
-          ),
-          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-          androidWillPauseWhenDucked: true,
-        ));
-
-        // Force volume to 1.0 to prevent OS-level software attenuation/DSP.
-        await _player.setVolume(1.0);
-        // Ensure speed is 1.0 to avoid resampling if not needed.
-        await _player.setSpeed(1.0);
-
-        // Native Studio Mastering
-        await _eqChannel.invokeMethod('setHighFidelityMode', {'enabled': true});
-      } else {
-        // Restore standard configuration
-        await session.configure(const AudioSessionConfiguration.music());
-        await _player.setVolume(_lastVolume);
-
-        // Disable Native Studio Mastering
-        await _eqChannel.invokeMethod('setHighFidelityMode', {'enabled': false});
-      }
-    } catch (_) {}
-  }
-
-  // ─── Playback Controls ────────────────────────────────────────────────────
-
-  @override
-  Future<void> play() => _player.play();
-
-  @override
-  Future<void> pause() => _player.pause();
-
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  @override
-  Future<void> skipToNext() => _player.seekToNext();
-
-  @override
-  Future<void> skipToPrevious() => _player.seekToPrevious();
-
-  @override
-  Future<void> skipToQueueItem(int index) async {
-    try {
-      _isUpdatingSource = true;
+    if (isPlaying) {
+      final posMs = audioEngineInstance.getPositionMs();
+      final durMs = audioEngineInstance.getDurationMs();
+      _positionController.add(Duration(milliseconds: posMs.toInt()));
       
-      // Pre-emptively update mediaItem to prevent currentSongProvider 
-      // from briefly selecting Track 0 while the player seeks.
-      if (index >= 0 && index < queue.value.length) {
-        mediaItem.add(queue.value[index]);
+      if (_durationController.value == null || _durationController.value!.inMilliseconds != durMs.toInt()) {
+        if (durMs > 0) {
+          _durationController.add(Duration(milliseconds: durMs.toInt()));
+        }
       }
 
-      await _player.seek(Duration.zero, index: index);
-      play();
-      
-      _isUpdatingSource = false;
-    } catch (e) {
-      _isUpdatingSource = false;
-      print('FamsicAudioHandler: skipToQueueItem error — $e');
-    }
-  }
-
-  @override
-  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
-    final audioSources =
-        mediaItems.map((item) => AudioSource.uri(Uri.parse(item.id))).toList();
-    _playlist.addAll(audioSources);
-    queue.add(mediaItems);
-    if (_player.audioSource == null) {
-      await _player.setAudioSource(_playlist);
-    }
-  }
-
-  @override
-  Future<void> updateQueue(List<MediaItem> queue, {int initialIndex = 0}) async {
-    if (queue.isEmpty) return;
-    try {
-      _isUpdatingSource = true;
-      
-      // Update our internal queue State
-      this.queue.add(queue);
-
-      // Pre-emptively set the target media item to prevent currentSongProvider 
-      // from briefly selecting Track 0 while the player is loading the new source.
-      if (initialIndex < queue.length) {
-        mediaItem.add(queue[initialIndex]);
+      // Check for track completion
+      if (durMs > 0 && posMs >= durMs - 50) {
+        skipToNext();
       }
-
-      // Create new audio sources
-      final audioSources =
-          queue.map((item) => AudioSource.uri(Uri.parse(item.id))).toList();
-
-      // setAudioSource with a NEW ConcatenatingAudioSource 
-      // ensures an atomic transition to the new folder/list
-      await _player.setAudioSource(
-        ConcatenatingAudioSource(children: audioSources),
-        initialIndex: initialIndex,
-        initialPosition: Duration.zero,
-      );
-      
-      _isUpdatingSource = false;
-    } catch (e) {
-      _isUpdatingSource = false;
-      print('FamsicAudioHandler: updateQueue error — $e');
     }
   }
 
-  // ─── State Transform ──────────────────────────────────────────────────────
-
-  PlaybackState _transformEvent(PlaybackEvent event) {
-    return PlaybackState(
+  void _broadcastState() {
+    playbackState.add(PlaybackState(
       controls: [
         MediaControl.skipToPrevious,
-        if (_player.playing) MediaControl.pause else MediaControl.play,
+        if (_playingController.value) MediaControl.pause else MediaControl.play,
         MediaControl.stop,
         MediaControl.skipToNext,
       ],
@@ -214,43 +107,133 @@ class FamsicAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         MediaAction.seekBackward,
       },
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
-      playing: _player.playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: event.currentIndex,
-    );
+      processingState: AudioProcessingState.ready,
+      playing: _playingController.value,
+      updatePosition: _positionController.value,
+      queueIndex: _currentIndex,
+    ));
+  }
+
+  // ─── Native FX (Famsic C++ Engine) ──────────────────────────────────────
+
+  Future<void> applyStereoEnhancement(bool enabled, int strength) async {
+    // Optional, handled by EQ / modes
+  }
+  void applyGapless(bool enabled) {}
+  Future<void> applyHighQuality(bool enabled) async {}
+
+  // ─── Playback Controls ────────────────────────────────────────────────────
+
+  @override
+  Future<void> play() async {
+    audioEngineInstance.play();
+    _playingController.add(true);
+    _broadcastState();
+  }
+
+  @override
+  Future<void> pause() async {
+    audioEngineInstance.pause();
+    _playingController.add(false);
+    _broadcastState();
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    audioEngineInstance.seekToMs(position.inMilliseconds.toDouble());
+    _positionController.add(position);
+    _broadcastState();
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    if (queue.value.isEmpty) return;
+    int next = _currentIndex + 1;
+    if (next >= queue.value.length) next = 0; // wrap around
+    await skipToQueueItem(next);
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    if (queue.value.isEmpty) return;
+    
+    if (_positionController.value.inSeconds > 3) {
+      await seek(Duration.zero);
+      return;
+    }
+
+    int prev = _currentIndex - 1;
+    if (prev < 0) prev = queue.value.length - 1;
+    await skipToQueueItem(prev);
+  }
+
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= queue.value.length) return;
+    _isUpdatingSource = true;
+    _currentIndex = index;
+    final item = queue.value[index];
+    mediaItem.add(item);
+    
+    // Instantly zero out visualizer for a clean transition
+    _visualizerController.add(List<double>.filled(7, 0.0));
+
+    try {
+      final path = item.id;
+      print('Famsic: Attempting to load song: $path');
+      
+      final success = audioEngineInstance.loadAndPlay(path);
+      if (success) {
+        print('Famsic: loadAndPlay result: true');
+        playbackState.add(playbackState.value.copyWith(
+          playing: true,
+          controls: [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious],
+          systemActions: {MediaAction.seek},
+        ));
+        _playingController.add(true);
+        _positionController.add(Duration.zero);
+      } else {
+        print('Famsic: FAILED to open file. Check path and permissions.');
+        _playingController.add(false);
+      }
+    } catch (e) {
+      print('Famsic: skipToQueueItem error — $e');
+    } finally {
+      _isUpdatingSource = false;
+    }
+  }
+
+  @override
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+    final currentQ = queue.value;
+    currentQ.addAll(mediaItems);
+    queue.add(currentQ);
+    if (!audioEngineInstance.isPlaying()) {
+      skipToQueueItem(0);
+    }
+  }
+
+  @override
+  Future<void> updateQueue(List<MediaItem> queue, {int initialIndex = 0}) async {
+    if (queue.isEmpty) return;
+    _isUpdatingSource = true;
+    this.queue.add(queue);
+    _isUpdatingSource = false;
+    await skipToQueueItem(initialIndex);
   }
 
   // ─── Helper Streams ───────────────────────────────────────────────────────
 
-  Stream<Duration> get positionStream => _player.positionStream;
-  Stream<Duration?> get durationStream => _player.durationStream;
-  Stream<bool> get playingStream => _player.playingStream;
-  Stream<double> get volumeStream => _player.volumeStream;
-  Stream<int?> get audioSessionIdStream => _player.androidAudioSessionIdStream;
+  Stream<Duration> get positionStream => _positionController.stream;
+  Stream<Duration?> get durationStream => _durationController.stream;
+  Stream<bool> get playingStream => _playingController.stream;
+  Stream<double> get volumeStream => _volumeController.stream;
+  Stream<int?> get audioSessionIdStream => Stream.value(0); // unused
   
-  /// Real-time frequency magnitudes from the native Visualizer (7 buckets)
-  Stream<List<double>> get visualizerStream => _visualizerChannel
-      .receiveBroadcastStream()
-      .map((event) => (event as List).cast<double>());
+  Stream<List<double>> get visualizerStream => _visualizerController.stream;
 
-  Future<void> setVolume(double volume) {
-    _lastVolume = volume;
-    return _player.setVolume(volume);
+  Future<void> setVolume(double volume) async {
+    _volumeController.add(volume);
+    audioEngineInstance.setVolume(volume);
   }
-
-  // ─── Audio Session ────────────────────────────────────────────────────────
-
-  /// The Android audio session ID used by just_audio internally.
-  /// Pass this to the native Equalizer so it attaches to the same stream.
-  int? get audioSessionId => _player.androidAudioSessionId;
 }
-

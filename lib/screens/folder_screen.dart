@@ -568,7 +568,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
         itemCount: songs.length,
         itemBuilder: (context, idx) {
           final song = songs[idx];
-          final isPlaying = currentMediaItem?.id == song.uri;
+          final isPlaying = currentMediaItem?.id == song.data;
           final playbackState = ref.watch(playbackStateProvider).value;
 
           return Padding(
@@ -592,7 +592,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
         final folderSongs = ref.read(folderSongsProvider(folderPath));
         ref.read(activePlaylistProvider.notifier).setPlaylist(folderSongs);
 
-        if (currentSong?.id == song.uri) {
+        if (currentSong?.id == song.data) {
           // Same song, toggle playback
           if (currentPlaybackState?.playing ?? false) {
             await handler.pause();
@@ -615,7 +615,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> with SingleTickerPr
             }
           }
 
-          final index = mediaItems.indexWhere((item) => item.id == song.uri);
+          final index = mediaItems.indexWhere((item) => item.id == song.data);
           if (needsUpdate) {
             await handler.updateQueue(mediaItems, initialIndex: index != -1 ? index : 0);
           } else if (index != -1) {

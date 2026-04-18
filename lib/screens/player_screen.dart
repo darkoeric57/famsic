@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../providers/settings_provider.dart';
 import 'equalizer_screen.dart';
 import 'settings_screen.dart';
+import '../providers/equalizer_provider.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key});
@@ -223,17 +224,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (c) => const SettingsScreen()),
-          ),
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 16, borderWidth: 1.8),
-            child: const Icon(LucideIcons.settings, color: Colors.white, size: 24),
-          ),
+        Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (c) => const SettingsScreen()),
+              ),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: AppTheme.pathfinderDarkDecoration(borderRadius: 16, borderWidth: 1.8),
+                child: const Icon(LucideIcons.settings, color: Colors.white, size: 24),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Consumer(builder: (context, ref, _) {
+              final eq = ref.watch(equalizerProvider);
+              final isOptimized = eq.isHeadsetOptimized;
+              return GestureDetector(
+                onTap: () {
+                  ref.read(equalizerProvider.notifier).toggleHeadsetOptimization();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 48,
+                  height: 48,
+                  decoration: AppTheme.pathfinderDarkDecoration(
+                    borderRadius: 16, 
+                    borderWidth: 1.8,
+                    rimColor: isOptimized ? AppTheme.neonCyan.withOpacity(0.8) : const Color(0xFF6F5F4B),
+                  ),
+                  child: Icon(
+                    LucideIcons.headphones, 
+                    color: isOptimized ? AppTheme.neonCyan : Colors.white60, 
+                    size: 24,
+                    shadows: isOptimized ? [
+                      BoxShadow(color: AppTheme.neonCyan.withOpacity(0.8), blurRadius: 15, spreadRadius: 2),
+                    ] : null,
+                  ),
+                ),
+              );
+            }),
+          ],
         ),
         Expanded(
           child: Column(

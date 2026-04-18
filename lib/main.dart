@@ -100,7 +100,7 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
     ref.listen<AsyncValue<int?>>(audioSessionIdProvider, (previous, next) {
       final sessionId = next.value;
       if (sessionId != null && sessionId != 0) {
-        ref.read(equalizerProvider.notifier).initialize(sessionId);
+        ref.read(equalizerProvider.notifier).initialize();
         
         // Ensure volume is initially set
         final savedVolume = ref.read(settingsProvider).volume;

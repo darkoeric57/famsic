@@ -69,7 +69,8 @@ class _VisualizerDialState extends ConsumerState<VisualizerDial> with SingleTick
               child: Consumer(
                 builder: (context, ref, _) {
                   final currentSong = ref.watch(currentSongProvider).value;
-                  final artworkAsync = ref.watch(artworkProvider(currentSong?.id ?? ""));
+                  final artworkUri = currentSong?.extras?['uri'] as String? ?? "";
+                  final artworkAsync = ref.watch(artworkProvider(artworkUri));
                   
                   return Stack(
                     fit: StackFit.expand,

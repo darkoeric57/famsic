@@ -175,7 +175,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             builder: (context, ref, _) {
               final currentMediaItem = ref.watch(currentSongProvider).value;
               final playbackState = ref.watch(playbackStateProvider).value;
-              final isActuallyPlaying = currentMediaItem?.id == song.uri;
+              final isActuallyPlaying = currentMediaItem?.id == song.data;
               final isPaused = isActuallyPlaying && !(playbackState?.playing ?? false);
               
               return Column(
@@ -534,12 +534,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryGrey),
       onTap: () async {
         final mediaItems = allSongs.map((s) => MediaItem(
-          id: s.uri,
+          id: s.data, // Real file path for C++ engine
           title: s.title,
           artist: s.artist,
           album: s.album,
           duration: Duration(milliseconds: s.duration),
-          extras: {'id': s.id, 'albumId': s.albumId},
+          extras: {'uri': s.uri, 'id': s.id, 'albumId': s.albumId},
         )).toList();
 
         await handler.updateQueue(mediaItems);
@@ -594,7 +594,7 @@ class _RecentlyPlayedCarouselState extends ConsumerState<RecentlyPlayedCarousel>
 
   int _calculateInitialIndex() {
     if (widget.currentMediaItem == null) return 0;
-    final index = widget.songs.indexWhere((s) => s.uri == widget.currentMediaItem!.id);
+    final index = widget.songs.indexWhere((s) => s.data == widget.currentMediaItem!.id);
     return index != -1 ? index : 0;
   }
 
@@ -631,19 +631,19 @@ class _RecentlyPlayedCarouselState extends ConsumerState<RecentlyPlayedCarousel>
     final targetSong = widget.songs[index];
 
     // If no song is loaded or the current song isn't from this carousel's context, force sync the queue
-    if (currentMediaItem == null || !widget.handler.queue.value.any((item) => item.id == targetSong.uri)) {
+    if (currentMediaItem == null || !widget.handler.queue.value.any((item) => item.id == targetSong.data)) {
       final mediaItems = widget.songs.map((s) => MediaItem(
-        id: s.uri,
+        id: s.data, // Real file path for C++ engine
         title: s.title,
         artist: s.artist,
         album: s.album,
         duration: Duration(milliseconds: s.duration),
-        extras: {'id': s.id, 'albumId': s.albumId},
+        extras: {'uri': s.uri, 'id': s.id, 'albumId': s.albumId},
       )).toList();
       
       await widget.handler.updateQueue(mediaItems);
       await widget.handler.skipToQueueItem(index);
-    } else if (currentMediaItem.id == targetSong.uri) {
+    } else if (currentMediaItem.id == targetSong.data) {
       if (playbackState?.playing ?? false) {
         widget.handler.pause();
       } else {
@@ -659,7 +659,7 @@ class _RecentlyPlayedCarouselState extends ConsumerState<RecentlyPlayedCarousel>
   void didUpdateWidget(RecentlyPlayedCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.currentMediaItem?.id != oldWidget.currentMediaItem?.id && !_isUserScrolling) {
-      final newIndex = widget.songs.indexWhere((s) => s.uri == widget.currentMediaItem?.id);
+      final newIndex = widget.songs.indexWhere((s) => s.data == widget.currentMediaItem?.id);
       if (newIndex != -1 && newIndex != _currentPage.round()) {
         _pageController.animateToPage(
           newIndex, 
@@ -694,7 +694,7 @@ class _RecentlyPlayedCarouselState extends ConsumerState<RecentlyPlayedCarousel>
         itemCount: widget.songs.length,
         onPageChanged: (index) {
           final song = widget.songs[index];
-          if (widget.currentMediaItem?.id != song.uri) {
+          if (widget.currentMediaItem?.id != song.data) {
             widget.handler.skipToQueueItem(index);
             widget.handler.play();
           }
