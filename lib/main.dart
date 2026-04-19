@@ -10,6 +10,7 @@ import 'screens/library_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/folder_screen.dart';
 import 'providers/navigation_provider.dart';
+import 'widgets/liquid_nav_bar.dart';
 
 late FamsicAudioHandler _audioHandler;
 
@@ -62,151 +63,48 @@ class MainLayout extends ConsumerStatefulWidget {
 }
 
 class _MainLayoutState extends ConsumerState<MainLayout> {
-  late PageController _pageController;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize controller with the current state from navigationProvider
-    final initialIndex = ref.read(navigationProvider);
-    _pageController = PageController(initialPage: initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
   final List<Widget> _screens = [
-    const LibraryScreen(),
-    const FolderScreen(),
-    const PlayerScreen(),
+    const LibraryScreen(), // 0
+    const FolderScreen(),  // 1
+    const PlayerScreen(),  // 2
   ];
 
   @override
   Widget build(BuildContext context) {
-    // Listen for navigation changes to trigger the animated transition
-    ref.listen<int>(navigationProvider, (previous, next) {
-      if (previous != next) {
-        _pageController.animateToPage(
-          next,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOutQuart,
-        );
-      }
-    });
-
+    // Sync with Audio Session
     ref.listen<AsyncValue<int?>>(audioSessionIdProvider, (previous, next) {
       final sessionId = next.value;
       if (sessionId != null && sessionId != 0) {
         ref.read(equalizerProvider.notifier).initialize();
-        
-        // Ensure volume is initially set
         final savedVolume = ref.read(settingsProvider).volume;
         ref.read(audioHandlerProvider).setVolume(savedVolume);
       }
     });
 
-    final selectedIndex = ref.watch(navigationProvider);
+    final navState = ref.watch(navigationProvider);
 
     return PopScope(
-      canPop: selectedIndex == 2,
+      canPop: navState.currentIndex == 2,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
-          // If not on Player, navigate to Player instead of closing
           ref.read(navigationProvider.notifier).setIndex(2);
         }
       },
       child: Scaffold(
-        body: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(), // Prevent manual swipe interference
-          children: _screens,
-        ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.only(bottom: 25, top: 15),
-          decoration: BoxDecoration(
-            color: AppTheme.creamBackground,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 20,
-                offset: const Offset(0, -5),
-              ),
-            ],
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(0, Icons.library_music_outlined, 'LIBRARY', selectedIndex),
-              _buildNavItem(1, Icons.folder_outlined, 'FOLDERS', selectedIndex),
-              _buildNavItem(2, Icons.graphic_eq, 'PLAYER', selectedIndex),
-            ],
+        backgroundColor: Colors.black, 
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 650), // Sync with Gooey jump
+          switchInCurve: Curves.easeIn,
+          switchOutCurve: Curves.easeOut,
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: Container(
+            key: ValueKey<int>(navState.currentIndex),
+            child: _screens[navState.currentIndex],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, IconData icon, String label, int selectedIndex) {
-    final isSelected = selectedIndex == index;
-    
-    return GestureDetector(
-      onTap: () => ref.read(navigationProvider.notifier).setIndex(index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: isSelected ? 1.25 : 1.0,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.elasticOut,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.accentNeon.withOpacity(0.1) : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: isSelected ? AppTheme.accentNeon : AppTheme.secondaryGrey,
-                size: 26,
-              ),
-            ),
-            const SizedBox(height: 2),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 300),
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
-                color: isSelected ? AppTheme.accentNeon : AppTheme.secondaryGrey,
-                letterSpacing: 1.0,
-              ),
-              child: Text(label),
-            ),
-            const SizedBox(height: 4),
-            // Active Indicator Dot
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              height: 4,
-              width: isSelected ? 4 : 0,
-              decoration: BoxDecoration(
-                color: AppTheme.accentNeon,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.accentNeon.withOpacity(0.5),
-                    blurRadius: 6,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        bottomNavigationBar: const LiquidDippingNavBar(),
       ),
     );
   }
